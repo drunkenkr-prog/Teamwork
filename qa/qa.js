@@ -92,6 +92,9 @@ const ok = (msg) => console.log(`  ok  ${msg}`);
   S = await state();
   const lastUser = apiLog.find(a=>a.p==='openai').body.messages[1].content;
   if (/최근 논의/.test(lastUser) && /매입가 1000원/.test(lastUser.split('[요청]')[0])) note('BUG', 'contextBlock: 지금 막 보낸 질문이 "최근 논의"에 중복으로 들어감 (log.push 후 contextBlock 호출)');
+  const parAnth = apiLog.find(a=>a.p==='anthropic').body.messages[0].content;
+  if (!/스스로 검수하라/.test(parAnth) || !/역마진/.test(parAnth)) note('BUG', '병렬 모드 가격 질문에서 구현 팀원에게 역마진 검수 지시가 없음');
+  else ok('병렬 모드 가격 질문 → 구현 자기 검수 지시');
   const aHeaders = apiLog.find(a=>a.p==='anthropic').headers;
   ok('anthropic headers: ' + JSON.stringify({v:aHeaders['anthropic-version'], d:aHeaders['anthropic-dangerous-direct-browser-access']}));
   const gUrl = apiLog.find(a=>a.p==='google').url;
@@ -117,6 +120,8 @@ const ok = (msg) => console.log(`  ok  ${msg}`);
   ok('토론 순서: ' + seqs.join(' → '));
   const finalPrompt = apiLog[apiLog.length-1].body.messages[1].content;
   if (/undefined/.test(finalPrompt)) note('BUG', '토론 결론 프롬프트에 undefined 포함');
+  if (!/\[기획 초안 \(1단계, 네가 썼다\)\]\n기획 답변/.test(finalPrompt)) note('BUG', '결론 담당(기획)이 자기 1단계 초안을 못 봄: ' + finalPrompt.slice(0,200));
+  else ok('결론 프롬프트에 기획 초안 포함');
 
   // 6) 토론 모드: openai 키 없음 → undefined 프롬프트?
   await page.click('#btnSettings'); await page.fill('#k_openai', ''); await page.click('#saveSettings'); await wait(200);
@@ -136,7 +141,8 @@ const ok = (msg) => console.log(`  ok  ${msg}`);
   await page.fill('#input', '혼자 토론'); await page.click('#send'); await wait(1200);
   const seqSolo = await page.$$eval('.turn:last-child .seq', els=>els.map(e=>e.textContent));
   console.log('  1인 토론 순서:', seqSolo.join(' → '));
-  if (seqSolo.includes('결론')) note('WARN', '참여자가 1명인데 결론 단계를 또 돌림 (같은 답 두 번)');
+  if (!seqSolo.includes('검수')) note('BUG', '참여자가 1명일 때 자기 검수 단계가 없음 (키 1개 사용자는 역마진 검수를 못 받음)');
+  else { const soloPrompt = apiLog.filter(a=>a.p==='anthropic').pop().body.messages[0].content; if (!/네가 쓴 것이다/.test(soloPrompt) || !/역마진/.test(soloPrompt)) note('BUG', '자기 검수 프롬프트에 검수 지시가 없음'); else ok('1인 참여 자기 검수 단계'); }
   await page.click('#btnSettings'); await page.fill('#k_google', 'AIza-test'); await page.click('#saveSettings'); await wait(200);
   await shot('05-debate-no-openai');
   // 키 복구
@@ -253,7 +259,7 @@ const ok = (msg) => console.log(`  ok  ${msg}`);
   // 12) 프로젝트 보드
   await page.click('#btnBoard'); await wait(300);
   await page.fill('#p_name', '관 파이프 상사'); await page.fill('#p_prog', '250'); await page.fill('#p_stack', 'Unity 6 / C#');
-  await page.fill('#p_now', '매입·매출 계산'); await page.fill('#p_next', '흥정 시스템');
+  await page.fill('#p_rules', '판매가 ≥ 원가 + 수수료 5%'); await page.fill('#p_now', '매입·매출 계산'); await page.fill('#p_next', '흥정 시스템');
   await page.fill('#todoInput', '역마진 방지 검증'); await page.press('#todoInput', 'Enter');
   await page.fill('#todoInput', '두번째 할 일'); await page.click('#todoAdd');
   await page.fill('#todoInput', '   '); await page.click('#todoAdd');
@@ -289,6 +295,9 @@ const ok = (msg) => console.log(`  ok  ${msg}`);
   const ctxPrompt = apiLog.find(a=>a.p==='openai').body.messages[1].content;
   console.log('  컨텍스트 프롬프트:\n' + ctxPrompt.split('\n').map(l=>'    | '+l).join('\n'));
   if (!/관 파이프 상사/.test(ctxPrompt) || !/40%/.test(ctxPrompt) || !/두번째 할 일/.test(ctxPrompt)) note('BUG', '보드 내용이 프롬프트 컨텍스트에 빠짐');
+  if (ctxPrompt.indexOf('규칙·수식') < 0 || ctxPrompt.indexOf('판매가 ≥ 원가 + 수수료 5%') > ctxPrompt.indexOf('진행률')) note('BUG', '규칙·수식 필드가 컨텍스트에 없거나 상태 필드보다 뒤에 옴');
+  else ok('규칙·수식이 컨텍스트 맨 앞');
+  S = await state(); if (S.projects.find(p=>p.id===S.current).rules !== '판매가 ≥ 원가 + 수수료 5%') note('BUG', '규칙·수식 필드가 저장되지 않음');
   if (/역마진 방지 검증/.test(ctxPrompt)) note('BUG', '완료 처리한 할 일이 "남은 할 일"에 포함됨');
 
   // 13) 프로젝트 목록: 추가/전환/이름변경/삭제

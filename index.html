@@ -185,6 +185,7 @@ textarea.f{resize:vertical;min-height:72px;line-height:1.5;font-size:13.5px}
     <div class="field"><label>진행률 %</label><input type="number" id="p_prog" min="0" max="100" step="1" inputmode="numeric" value="0"></div>
     <div class="field"><label>엔진 / 스택</label><input type="text" id="p_stack" placeholder="Unity 6 / C#"></div>
   </div>
+  <div class="field"><label>규칙 · 수식 (항상 맨 앞에 전달)</label><textarea class="f" id="p_rules" placeholder="바뀌지 않는 사실: 게임 규칙, 핵심 계산식, 단위·반올림, 이미 결정된 사항&#10;예: 판매가 ≥ 원가 + 수수료 5%. 흥정 폭 ±15%. 원 단위 반올림은 합계에서 한 번."></textarea></div>
   <div class="field"><label>지금 하는 일</label><textarea class="f" id="p_now" placeholder="예: 매입·매출 계산 로직 구현 중"></textarea></div>
   <div class="field"><label>다음 목표</label><textarea class="f" id="p_next" placeholder="예: 거래처 AI 흥정 시스템"></textarea></div>
 
@@ -288,7 +289,7 @@ const LOG_LIMIT = 60;
 
 const uid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 const clampProg = v => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0; };
-const blankProject = (name) => ({ id:uid(), name:name||'새 프로젝트', prog:0, stack:'', now:'', next:'', todos:[], log:[] });
+const blankProject = (name) => ({ id:uid(), name:name||'새 프로젝트', prog:0, stack:'', rules:'', now:'', next:'', todos:[], log:[] });
 /* 저장 데이터가 깨져 있어도 앱이 죽지 않도록 정규화 */
 function normalizeProject(p){
   const b = blankProject();
@@ -296,7 +297,7 @@ function normalizeProject(p){
   o.id = typeof o.id==='string' && o.id ? o.id : b.id;
   o.name = String(o.name || '새 프로젝트');
   o.prog = clampProg(o.prog);
-  o.stack = String(o.stack||''); o.now = String(o.now||''); o.next = String(o.next||'');
+  o.stack = String(o.stack||''); o.rules = String(o.rules||''); o.now = String(o.now||''); o.next = String(o.next||'');
   o.todos = Array.isArray(o.todos) ? o.todos.filter(t=>t && typeof t.text==='string').map(t=>({ text:t.text, done:!!t.done })) : [];
   o.log = Array.isArray(o.log) ? o.log.filter(e=>e && typeof e.text==='string' && (e.role==='user' || (e.role==='ai' && AGENTS[e.agent]))) : [];
   return o;
@@ -483,6 +484,7 @@ function contextBlock(p){
   const L = [];
   if(p.name)  L.push('프로젝트: '+p.name);
   if(p.stack) L.push('스택: '+p.stack);
+  if(p.rules) L.push('규칙·수식 (바뀌지 않는 사실, 이에 어긋나면 지적하라):\n'+p.rules);
   if(p.prog)  L.push('진행률: '+p.prog+'%');
   if(p.now)   L.push('지금 하는 일: '+p.now);
   if(p.next)  L.push('다음 목표: '+p.next);
@@ -496,6 +498,7 @@ function contextBlock(p){
 function sysFor(agent){
   return S.roles[agent] + '\n\n너는 세 명(기획/구현/조사)으로 이루어진 팀의 한 명이다. 네 담당 영역에 집중하고, 답변은 한국어로, 군더더기 없이 써라.';
 }
+const CALC_WORDS = /가격|매입|매출|수수료|흥정|마진|할인|재고|잔고|원가|판매|계산|수식|세금|환율|price|margin|discount|fee/i;
 const REVIEW_NOTE = '결론을 내기 전에 검수하라: (1) 계산식·가격 로직이 있으면 역마진(판매가 < 원가+수수료), 0·음수·반올림 경계값, 단위 불일치를 점검하고 (2) 원래 요청에서 빠뜨린 항목이 없는지 확인해 있으면 보완하라.';
 
 /* ══════════ 렌더 ══════════ */
@@ -617,7 +620,8 @@ async function send(){
       scrollDown();
       await Promise.all(active.map(async a=>{
         try{
-          const out = await ask(a, sysFor(a), ctx + '[요청]\n' + text);
+          const selfCheck = (a==='anthropic' && CALC_WORDS.test(text)) ? '\n\n답을 끝내기 전에 스스로 검수하라: '+REVIEW_NOTE : '';
+          const out = await ask(a, sysFor(a), ctx + '[요청]\n' + text + selfCheck);
           fillCard(cards[a], out, false);
           record({ role:'ai', agent:a, text:out });
         }catch(err){
@@ -636,14 +640,19 @@ async function send(){
         { a:'anthropic', seq:'2', prompt:()=>ctx+'[요청]\n'+text+sec('기획의 초안', got.openai)+'\n\n'+(got.openai?'이 초안을 기술적으로 검토하고, ':'기획 초안이 없으니 네가 방향도 짧게 잡은 뒤, ')+'실제 코드와 구현 방법을 제시하라. 문제가 있으면 지적하라.' },
         { a:'google',    seq:'3', prompt:()=>ctx+'[요청]\n'+text+sec('기획', got.openai)+sec('구현', got.anthropic)+'\n\n앞선 의견을 보고 놓친 최신 기술·에셋·대안을 조사해 제시하라.' }
       ];
-      /* 결론: 기획(OpenAI)이 없으면 다음 순서의 팀원이 대신 맡는다. 참여자가 1명뿐이면 결론 단계는 생략 */
+      /* 결론: 기획(OpenAI)이 없으면 다음 순서의 팀원이 대신 맡는다.
+         API 호출은 매번 무상태이므로 결론 담당은 자기 앞 단계 초안도 다시 봐야 한다.
+         참여자가 1명이어도 결론(자기 검수) 단계는 돈다 — 프롬프트가 다르므로 같은 답 두 번이 아니다. */
       const closer = ['openai','anthropic','google'].find(a => S.keys[a]);
-      if(active.length >= 2 && closer){
-        chain.push({ a:closer, seq:'결론', prompt:()=>ctx+'[원래 요청]\n'+text
-          + (closer!=='openai' ? sec('기획 의견', got.openai) : '')
-          + (closer!=='anthropic' ? sec('구현 의견', got.anthropic) : '')
-          + (closer!=='google' ? sec('조사 의견', got.google) : '')
-          + '\n\n'+REVIEW_NOTE+'\n팀 의견을 종합해 최종 결정을 내려라. 무엇을 채택하고 무엇을 버리는지 밝히고, 바로 착수할 다음 단계 3개를 제시하라.' });
+      if(closer){
+        const solo = active.length < 2;
+        chain.push({ a:closer, seq:solo?'검수':'결론', prompt:()=>ctx+'[원래 요청]\n'+text
+          + sec('기획 초안 (1단계'+(closer==='openai'?', 네가 썼다':'')+')', got.openai)
+          + sec('구현 의견 (2단계'+(closer==='anthropic'?', 네가 썼다':'')+')', got.anthropic)
+          + sec('조사 의견 (3단계'+(closer==='google'?', 네가 썼다':'')+')', got.google)
+          + '\n\n'+REVIEW_NOTE
+          + (solo ? '\n위 답은 네가 쓴 것이다. 검수 항목별로 O/X를 매기고, X는 고친 내용을 써라. 그 다음 바로 착수할 다음 단계 3개를 제시하라.'
+                  : '\n팀 의견을 종합해 최종 결정을 내려라. 무엇을 채택하고 무엇을 버리는지 밝히고, 바로 착수할 다음 단계 3개를 제시하라.') });
       }
       for(const step of chain){
         if(!S.keys[step.a]) continue;
@@ -732,7 +741,7 @@ $('#btnBoard').onclick = ()=>{
   const p = cur();
   $('#boardTitle').textContent = p.name;
   $('#p_name').value = p.name; $('#p_prog').value = p.prog;
-  $('#p_stack').value = p.stack; $('#p_now').value = p.now; $('#p_next').value = p.next;
+  $('#p_stack').value = p.stack; $('#p_rules').value = p.rules; $('#p_now').value = p.now; $('#p_next').value = p.next;
   renderTodos(); openSheet('#sheetBoard');
 };
 
@@ -741,6 +750,7 @@ $('#saveBoard').onclick = ()=>{
   p.name  = $('#p_name').value.trim() || p.name;
   p.prog  = clampProg($('#p_prog').value);
   p.stack = $('#p_stack').value.trim();
+  p.rules = $('#p_rules').value.trim();
   p.now   = $('#p_now').value.trim();
   p.next  = $('#p_next').value.trim();
   save(); renderStrip(); if(!p.log.length) renderEmpty(); closeSheets(); toast('저장했습니다');
