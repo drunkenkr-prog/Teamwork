@@ -6,10 +6,10 @@
 <meta name="theme-color" content="#12151c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>AI 개발팀 콘솔</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" media="print" onload="this.media='all'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <style>
 :root{
   --bg:#12151c; --surface:#1a1f2b; --surface2:#202634; --line:#2b3242;
@@ -234,14 +234,13 @@ textarea.f{resize:vertical;min-height:72px;line-height:1.5;font-size:13.5px}
 /* ══════════ 저장소 ══════════ */
 const mem = {};
 let storeBroken = false;
+const SAVE_FAIL_MSG = '저장 실패: 저장 공간이 부족합니다. 오래된 대화 기록을 지워주세요';
 const store = {
   get(k){ try{ return localStorage.getItem(k); }catch(e){ return mem[k] ?? null; } },
+  /* 성공 true / 실패 false. 실패 시 메모리에만 남으므로 새로고침하면 사라진다 — 호출부가 반드시 알린다 */
   set(k,v){
-    try{ localStorage.setItem(k,v); storeBroken = false; }
-    catch(e){
-      mem[k]=v;
-      if(!storeBroken){ storeBroken = true; if(typeof toast==='function') toast('저장 공간 문제로 이 기기에 저장되지 않습니다'); }
-    }
+    try{ localStorage.setItem(k,v); storeBroken = false; return true; }
+    catch(e){ mem[k]=v; storeBroken = true; return false; }
   }
 };
 
@@ -280,11 +279,12 @@ function sunsetWarnings(){
 }
 const DEF_ROLES = {
   openai:'너는 1인 게임 개발팀의 디렉터다. 기획, 게임 구조 설계, UI/UX, 우선순위 결정, 전체 총괄을 맡는다. 항상 실행 가능한 결론을 내고, 왜 그 선택인지 한두 줄로 밝혀라. 길게 늘어놓지 말고 핵심만 써라.',
-  anthropic:'너는 이 팀의 시니어 엔지니어다. 실제 코드 작성, 리팩토링, 버그 수정, 성능 최적화를 맡는다. 코드는 바로 붙여넣어 돌아가도록 완성형으로 쓰고, 수정 지점을 명확히 표시하라. 돈·수량 계산 코드는 역마진(판매가가 원가+수수료보다 낮아지는 경우)과 0·음수·반올림 경계값을 반드시 막고, 그 검증 코드를 함께 써라. 위험한 부분은 짧게 경고하라.',
+  anthropic:'너는 이 팀의 시니어 엔지니어다. 실제 코드 작성, 리팩토링, 버그 수정, 성능 최적화를 맡는다. 코드는 바로 붙여넣어 돌아가도록 완성형으로 쓰고, 수정 지점을 명확히 표시하라. 돈·수량 계산 코드는 역마진(판매가가 원가+수수료보다 낮아지는 경우)과 0·음수·반올림 경계값을 반드시 막고, 입력→기대값 테스트 벡터 3개 이상을 손으로 계산해 표로 보여라. 위험한 부분은 짧게 경고하라.',
   google:'너는 이 팀의 리서처다. 최신 기술·에셋·플러그인·레퍼런스 조사와 대안 제시를 맡는다. 구체적인 이름과 버전을 밝히고, 항상 대안을 2개 이상 제시하며 각각의 장단점을 한 줄로 비교하라.'
 };
 
-let REQUEST_TIMEOUT_MS = 180000;   // 요청 하나당 (토론 모드는 단계마다 따로)
+/* 요청 하나당 타임아웃 (토론 모드는 단계마다 따로). 스트리밍이 없으므로 긴 답변(max_tokens 16000)을 기다릴 만큼 넉넉하게 — 중지 버튼이 있다 */
+const TIMEOUT_MS = { openai:600000, anthropic:600000, google:300000 };
 const LOG_LIMIT = 60;
 
 const uid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
@@ -356,6 +356,7 @@ const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;'
 
 function md(t){
   let h = esc(t).replace(/\r\n?/g,'\n');
+  if((h.match(/```/g)||[]).length % 2 === 1) h += '\n```';   // 잘린 답변의 열린 코드펜스를 닫는다
   const blocks = [];
   h = h.replace(/```(\w*)\n?([\s\S]*?)```/g, (_,l,c) => {
     blocks.push('<pre><code>'+c.replace(/\n$/,'')+'</code></pre>');
@@ -402,7 +403,13 @@ async function readJson(r){
   if(!r.ok){
     const detail = d?.error?.message || d?.error?.type || d?.message
                  || raw.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,160);
-    throw new Error('HTTP '+r.status+(detail ? ' · '+detail : ''));
+    const e = new Error('HTTP '+r.status+(detail ? ' · '+detail : ''));
+    e.status = r.status;
+    /* Retry-After 헤더(초) 또는 Gemini 본문의 retryDelay("41s") */
+    const ra = Number(r.headers.get('retry-after'));
+    const rd = /(\d+(?:\.\d+)?)s/.exec(JSON.stringify(d?.error?.details||'') + ' ' + (d?.error?.message||''));
+    e.retryAfterMs = Number.isFinite(ra) && ra > 0 ? ra*1000 : (rd ? Math.ceil(parseFloat(rd[1])*1000) : 0);
+    throw e;
   }
   if(!d || typeof d!=='object') throw new Error('응답을 해석할 수 없습니다 (JSON 아님)');
   return d;
@@ -411,17 +418,18 @@ function post(url, headers, body, signal){
   return fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json', ...headers }, body:JSON.stringify(body), signal });
 }
 /* 요청 하나짜리 신호: 자체 타임아웃 + 사용자 중지(aborter) 둘 다 반영 */
-function requestSignal(){
+function requestSignal(agent){
   const c = new AbortController();
-  const t = setTimeout(()=>c.abort('timeout'), REQUEST_TIMEOUT_MS);
+  const ms = TIMEOUT_MS[agent] || 300000;
+  const t = setTimeout(()=>c.abort('timeout'), ms);
   const onStop = ()=>c.abort('user');
   const parent = aborter?.signal;
   if(parent){ if(parent.aborted) onStop(); else parent.addEventListener('abort', onStop, { once:true }); }
-  return { signal:c.signal, done(){ clearTimeout(t); parent?.removeEventListener('abort', onStop); } };
+  return { signal:c.signal, ms, done(){ clearTimeout(t); parent?.removeEventListener('abort', onStop); } };
 }
-function humanError(err, signal){
+function humanError(err, signal, ms){
   /* abort(reason) 로 끊으면 브라우저에 따라 AbortError 대신 reason 값 자체가 던져진다 */
-  if(signal?.aborted || err?.name === 'AbortError') return signal?.reason === 'timeout' ? '응답 시간 초과 ('+(REQUEST_TIMEOUT_MS/1000)+'초). 다시 시도해주세요.' : '중지했습니다.';
+  if(signal?.aborted || err?.name === 'AbortError') return signal?.reason === 'timeout' ? '응답 시간 초과 ('+Math.round((ms||0)/1000)+'초). 다시 시도해주세요.' : '중지했습니다.';
   if(/Failed to fetch|NetworkError|Load failed/i.test(err?.message||'')) return '네트워크 오류: 인터넷 연결 또는 브라우저 차단(CORS)을 확인해주세요.';
   return err?.message || String(err);
 }
@@ -429,7 +437,7 @@ function humanError(err, signal){
 async function callOpenAI(sys, usr, signal){
   const r = await post('https://api.openai.com/v1/chat/completions',
     { 'Authorization':'Bearer '+S.keys.openai },
-    { model:S.models.openai, messages:[{role:'system',content:sys},{role:'user',content:usr}] }, signal);
+    { model:S.models.openai, max_completion_tokens:16000, messages:[{role:'system',content:sys},{role:'user',content:usr}] }, signal);
   const d = await readJson(r);
   const m = d.choices?.[0]?.message;
   if(!m) throw new Error('응답이 비어 있습니다.');
@@ -456,7 +464,7 @@ async function callAnthropic(sys, usr, signal){
 async function callGemini(sys, usr, signal){
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(S.models.google) + ':generateContent';
   const r = await post(url, { 'x-goog-api-key':S.keys.google },
-    { system_instruction:{ parts:[{text:sys}] }, contents:[{ role:'user', parts:[{text:usr}] }] }, signal);
+    { system_instruction:{ parts:[{text:sys}] }, contents:[{ role:'user', parts:[{text:usr}] }], generationConfig:{ maxOutputTokens:16000 } }, signal);
   const d = await readJson(r);
   if(d.promptFeedback?.blockReason) throw new Error('요청이 차단되었습니다: '+d.promptFeedback.blockReason);
   const c = d.candidates?.[0];
@@ -471,11 +479,27 @@ async function callGemini(sys, usr, signal){
   return out;
 }
 const CALL = { openai:callOpenAI, anthropic:callAnthropic, google:callGemini };
-async function ask(agent, sys, usr){
+const RETRY_STATUS = new Set([408, 425, 429, 500, 502, 503, 504, 529]);
+const sleep = (ms, signal) => new Promise((res, rej) => {
+  const t = setTimeout(res, ms);
+  signal?.addEventListener('abort', ()=>{ clearTimeout(t); rej(signal.reason || 'user'); }, { once:true });
+});
+async function ask(agent, sys, usr, onRetry){
   if(!S.keys[agent]) throw new Error(AGENTS[agent].sub+' 키가 설정에 없습니다.');
-  const rs = requestSignal();
-  try{ return await CALL[agent](sys, usr, rs.signal); }
-  catch(err){ throw new Error(humanError(err, rs.signal)); }
+  const rs = requestSignal(agent);
+  try{
+    try{ return await CALL[agent](sys, usr, rs.signal); }
+    catch(err){
+      /* 과부하(429/529)·일시 장애·네트워크 끊김은 한 번만 자동 재시도. 중지·타임아웃은 재시도하지 않는다 */
+      const transient = !rs.signal.aborted && (RETRY_STATUS.has(err?.status) || /Failed to fetch|NetworkError|Load failed/i.test(err?.message||''));
+      if(!transient) throw err;
+      const wait = Math.min(Math.max(err?.retryAfterMs || 8000, 3000), 45000);
+      onRetry?.(wait);
+      await sleep(wait, rs.signal);
+      return await CALL[agent](sys, usr, rs.signal);
+    }
+  }
+  catch(err){ throw new Error(humanError(err, rs.signal, rs.ms)); }
   finally{ rs.done(); }
 }
 
@@ -499,7 +523,11 @@ function sysFor(agent){
   return S.roles[agent] + '\n\n너는 세 명(기획/구현/조사)으로 이루어진 팀의 한 명이다. 네 담당 영역에 집중하고, 답변은 한국어로, 군더더기 없이 써라.';
 }
 const CALC_WORDS = /가격|매입|매출|수수료|흥정|마진|할인|재고|잔고|원가|판매|계산|수식|세금|환율|price|margin|discount|fee/i;
-const REVIEW_NOTE = '결론을 내기 전에 검수하라: (1) 계산식·가격 로직이 있으면 역마진(판매가 < 원가+수수료), 0·음수·반올림 경계값, 단위 불일치를 점검하고 (2) 원래 요청에서 빠뜨린 항목이 없는지 확인해 있으면 보완하라.';
+/* 검수 지시. 보드에 규칙·수식이 있으면 그것이 기준이고, 없을 때만 기본 역마진 식을 쓴다 (기준이 두 개가 되지 않게) */
+function reviewNote(p){
+  const basis = p && p.rules ? '[규칙·수식] 필드를 기준으로 역마진(판매가가 원가·수수료·세금을 못 덮는 경우)과 매입 상한' : '역마진(판매가 < 원가+수수료), 매입 상한(매입가 > 예상 판매가−수수료−목표 마진)';
+  return '결론을 내기 전에 검수하라: (1) 계산식·가격 로직이 있으면 '+basis+', 흥정 양방향 한계, 0·음수·반올림 경계값, 단위 불일치를 점검하고, 입력→기대값 테스트 벡터 3개 이상을 손으로 계산해 표로 보여라 (2) 원래 요청에서 빠뜨린 항목이 없는지 확인해 있으면 미달 항목을 명시하고 누가 보완할지 지정하라.';
+}
 
 /* ══════════ 렌더 ══════════ */
 const feed = $('#feed');
@@ -574,6 +602,9 @@ function renderStrip(){
 
 /* ══════════ 전송 ══════════ */
 let busy = false;
+let busySince = 0;        // 전송 직후 짧은 시간 동안은 ■(중지)를 무시한다 — 모바일 더블탭·손떨림 방지
+let busyProjectId = null; // 답변을 기다리는 프로젝트
+const STOP_GUARD_MS = 700;
 function setBusy(on){
   busy = on;
   const b = $('#send');
@@ -588,7 +619,11 @@ function trimLog(p){
 }
 
 async function send(){
-  if(busy){ aborter?.abort('user'); return; }
+  if(busy){
+    if(Date.now() - busySince < STOP_GUARD_MS) return;                     // 더블탭은 중지가 아니다
+    if(cur().id !== busyProjectId){ const bp = S.projects.find(p=>p.id===busyProjectId); toast('"'+(bp?bp.name:'다른 프로젝트')+'"가 답변을 기다리는 중입니다'); return; }
+    aborter?.abort('user'); return;
+  }
   const text = $('#input').value.trim();
   if(!text) return;
   if(!S.keys.openai && !S.keys.anthropic && !S.keys.google){
@@ -596,7 +631,7 @@ async function send(){
   }
 
   const proj = cur();
-  setBusy(true);
+  setBusy(true); busySince = Date.now(); busyProjectId = proj.id;
   aborter = new AbortController();
   $('#input').value = ''; $('#input').style.height = 'auto';
 
@@ -611,7 +646,9 @@ async function send(){
 
   const active = Object.keys(AGENTS).filter(a => S.keys[a]);
   const newCard = (a, seq) => { const d = document.createElement('div'); d.innerHTML = cardHTML(a, seq); const c = d.firstElementChild; turn.appendChild(c); return c; };
-  const record = (entry) => { proj.log.push(entry); save(); };
+  /* 사용자가 다른 프로젝트에 갔다가 돌아오면 카드가 화면 밖(분리된 DOM)에 있다 → 로그를 다시 그린다 */
+  const record = (entry) => { proj.log.push(entry); if(!save()) toast(SAVE_FAIL_MSG); if(!turn.isConnected && cur().id === proj.id) renderLog(); };
+  const retryNote = (card) => (ms) => { const b = card.querySelector('.body'); if(b) b.innerHTML = '<div class="dots"><i></i><i></i><i></i></div><div class="hint" style="margin:0">일시 오류 · '+Math.round(ms/1000)+'초 뒤 다시 시도</div>'; };
 
   try{
     if(S.mode === 'parallel'){
@@ -620,8 +657,8 @@ async function send(){
       scrollDown();
       await Promise.all(active.map(async a=>{
         try{
-          const selfCheck = (a==='anthropic' && CALC_WORDS.test(text)) ? '\n\n답을 끝내기 전에 스스로 검수하라: '+REVIEW_NOTE : '';
-          const out = await ask(a, sysFor(a), ctx + '[요청]\n' + text + selfCheck);
+          const selfCheck = (a==='anthropic' && CALC_WORDS.test(text)) ? '\n\n답을 끝내기 전에 스스로 검수하라: '+reviewNote(proj) : '';
+          const out = await ask(a, sysFor(a), ctx + '[요청]\n' + text + selfCheck, retryNote(cards[a]));
           fillCard(cards[a], out, false);
           record({ role:'ai', agent:a, text:out });
         }catch(err){
@@ -650,7 +687,7 @@ async function send(){
           + sec('기획 초안 (1단계'+(closer==='openai'?', 네가 썼다':'')+')', got.openai)
           + sec('구현 의견 (2단계'+(closer==='anthropic'?', 네가 썼다':'')+')', got.anthropic)
           + sec('조사 의견 (3단계'+(closer==='google'?', 네가 썼다':'')+')', got.google)
-          + '\n\n'+REVIEW_NOTE
+          + '\n\n'+reviewNote(proj)
           + (solo ? '\n위 답은 네가 쓴 것이다. 검수 항목별로 O/X를 매기고, X는 고친 내용을 써라. 그 다음 바로 착수할 다음 단계 3개를 제시하라.'
                   : '\n팀 의견을 종합해 최종 결정을 내려라. 무엇을 채택하고 무엇을 버리는지 밝히고, 바로 착수할 다음 단계 3개를 제시하라.') });
       }
@@ -659,7 +696,7 @@ async function send(){
         if(aborter.signal.aborted) break;
         const card = newCard(step.a, step.seq); scrollDown();
         try{
-          const out = await ask(step.a, sysFor(step.a), step.prompt());
+          const out = await ask(step.a, sysFor(step.a), step.prompt(), retryNote(card));
           got[step.a] = out;
           fillCard(card, out, false);
           record({ role:'ai', agent:step.a, seq:step.seq, text:out });
@@ -674,9 +711,12 @@ async function send(){
     }
   } finally {
     aborter = null;
+    const before = proj.log.length;
     trimLog(proj);
-    save();
-    setBusy(false);
+    if(!save()) toast(SAVE_FAIL_MSG);
+    setBusy(false); busyProjectId = null;
+    /* 절단으로 저장 내용이 바뀌었거나, 카드가 화면 밖에 있으면 화면 = 저장 이 되도록 다시 그린다 */
+    if(cur().id === proj.id && (!turn.isConnected || proj.log.length !== before)) renderLog();
   }
 }
 
@@ -693,7 +733,8 @@ $('#strip').onclick = ()=>{ renderProjects(); openSheet('#sheetProjects'); };
 function switchTo(id){
   S.current = id; save();
   renderStrip(); renderLog(); closeSheets();
-  toast(cur().name);
+  if(busy && busyProjectId && id !== busyProjectId){ const bp = S.projects.find(p=>p.id===busyProjectId); toast(cur().name+' · "'+(bp?bp.name:'')+'" 답변 대기 중'); }
+  else toast(cur().name);
 }
 
 function renderProjects(){
@@ -753,14 +794,14 @@ $('#saveBoard').onclick = ()=>{
   p.rules = $('#p_rules').value.trim();
   p.now   = $('#p_now').value.trim();
   p.next  = $('#p_next').value.trim();
-  save(); renderStrip(); if(!p.log.length) renderEmpty(); closeSheets(); toast('저장했습니다');
+  const ok = save(); renderStrip(); if(!p.log.length) renderEmpty(); closeSheets(); toast(ok ? '저장했습니다' : SAVE_FAIL_MSG);
 };
 
 $('#clearLog').onclick = ()=>{
   const p = cur();
   if(busy){ toast('답변이 끝난 뒤에 지워주세요'); return; }
   if(!confirm('"'+p.name+'"의 대화 기록만 지울까요? 보드 내용은 남습니다.')) return;
-  p.log = []; save(); renderLog(); closeSheets(); toast('기록을 지웠습니다');
+  p.log = []; const ok = save(); renderLog(); closeSheets(); toast(ok ? '기록을 지웠습니다' : SAVE_FAIL_MSG);
 };
 
 function renderTodos(){
@@ -802,9 +843,9 @@ $('#saveSettings').onclick = ()=>{
     S.models[a] = DEAD_MODELS[m] || m;
     S.roles[a]  = $('#r_'+a).value.trim() || DEF_ROLES[a];
   });
-  save(); closeSheets();
+  const ok = save(); closeSheets();
   const warn = sunsetWarnings();
-  toast(warn.length ? warn[0] : '저장했습니다');
+  toast(!ok ? SAVE_FAIL_MSG : warn.length ? warn[0] : '저장했습니다');
   if(!cur().log.length) renderEmpty();
 };
 

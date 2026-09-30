@@ -36,6 +36,9 @@ const ok = (msg) => console.log(`  ok  ${msg}`);
     if (mode==='html') return r.fulfill({status:502, contentType:'text/html', body:'<html>Bad gateway</html>'});
     if (mode==='hang' || mode==='hangopenai') return; // never respond
     if (mode==='nullcontent') return r.fulfill({status:200, contentType:'application/json', body:JSON.stringify({choices:[{message:{content:null, refusal:'거부'}}]})});
+    if (mode==='slow') await new Promise(r=>setTimeout(r, 900));
+    if (mode==='429once' && apiLog.filter(a=>a.p==='openai').length === 1) return r.fulfill({status:429, contentType:'application/json', headers:{'retry-after':'1'}, body:JSON.stringify({error:{message:'Rate limit reached'}})});
+    if (mode==='openfence') return r.fulfill({status:200, contentType:'application/json', body:JSON.stringify({choices:[{message:{content:'설명\n\n```js\nconst x = 1;\n  if (x) {\n- 잘림'}}]})});
     const txt = mode==='md' ? '# 제목\n\n**굵게** 그리고 `code`\n\n- 항목1\n- 항목2\n\n본문 사이\n- 항목3\n\n```js\nconst a = 1 < 2 && "x";\n```\n\n1. 번호\n2. 목록\n\n마무리 <script>alert(1)</script>' : '기획 답변: ' + body.messages[1].content.slice(0,60);
     return r.fulfill({status:200, contentType:'application/json', body:JSON.stringify({choices:[{message:{content:txt}}]})});
   });
@@ -45,6 +48,7 @@ const ok = (msg) => console.log(`  ok  ${msg}`);
     if (mode==='html') return r.fulfill({status:502, contentType:'text/html', body:'<html>Bad gateway</html>'});
     if (mode==='hang') return;
     if (mode==='refusal') return r.fulfill({status:200, contentType:'application/json', body:JSON.stringify({content:[], stop_reason:'refusal', stop_details:{type:'refusal',category:'general_harms'}})});
+    if (mode==='slow') await new Promise(r=>setTimeout(r, 900));
     if (mode==='maxtok') return r.fulfill({status:200, contentType:'application/json', body:JSON.stringify({content:[{type:'text',text:'잘린 답변 시작…'}], stop_reason:'max_tokens'})});
     return r.fulfill({status:200, contentType:'application/json', body:JSON.stringify({content:[{type:'text',text:'구현 답변: ' + body.messages[0].content.slice(0,60)}], stop_reason:'end_turn'})});
   });
@@ -55,6 +59,7 @@ const ok = (msg) => console.log(`  ok  ${msg}`);
     if (mode==='hang') return;
     if (mode==='safety') return r.fulfill({status:200, contentType:'application/json', body:JSON.stringify({candidates:[{finishReason:'SAFETY', safetyRatings:[]}]})});
     if (mode==='blocked') return r.fulfill({status:200, contentType:'application/json', body:JSON.stringify({promptFeedback:{blockReason:'SAFETY'}})});
+    if (mode==='slow') await new Promise(r=>setTimeout(r, 900));
     return r.fulfill({status:200, contentType:'application/json', body:JSON.stringify({candidates:[{content:{parts:[{text:'조사 답변: ' + body.contents[0].parts[0].text.slice(0,60)}]}}]})});
   });
 
@@ -160,7 +165,7 @@ const ok = (msg) => console.log(`  ok  ${msg}`);
   // 8) 비-JSON 응답 (502 HTML)
   mode = 'html';
   await page.fill('#input', '502 테스트'); await page.click('#send');
-  await page.waitForFunction(() => document.querySelectorAll('.turn:last-child .err').length === 3, null, {timeout:5000}).catch(()=>note('BUG','502 HTML 응답 처리 실패'));
+  await page.waitForFunction(() => document.querySelectorAll('.turn:last-child .err').length === 3, null, {timeout:25000}).catch(()=>note('BUG','502 HTML 응답 처리 실패'));
   const err502 = await page.$$eval('.turn:last-child .err', els=>els.map(e=>e.textContent));
   if (err502.some(t=>/Unexpected token|JSON/.test(t))) note('BUG', '비-JSON 응답(502 HTML) 시 사용자에게 "Unexpected token" 같은 파서 오류가 그대로 노출됨: ' + err502[0]);
   else ok('502 표시: ' + err502.join(' | '));
@@ -230,10 +235,11 @@ const ok = (msg) => console.log(`  ok  ${msg}`);
   await page.fill('#input', '두번째'); await page.press('#input', 'Control+Enter'); await wait(300);
   if (!(await page.$('#send.stop'))) note('BUG', '전송 중 Ctrl+Enter 가 진행 중인 요청을 끊어버림');
   else ok('전송 중 Ctrl+Enter 무시');
-  await page.click('#send'); await wait(300); await page.fill('#input', '');
+  await wait(600); await page.click('#send'); await wait(300); await page.fill('#input', '');
+  if (await page.$('#send.stop')) note('BUG', '전송 1초 뒤 ■ 를 눌렀는데 중지되지 않음');
 
   // 11c) 타임아웃은 요청 하나마다: 토론 모드에서 1단계가 시간 초과여도 2·3·결론은 정상
-  await page.evaluate(() => { REQUEST_TIMEOUT_MS = 1500; });
+  await page.evaluate(() => { TIMEOUT_MS.openai = 1500; TIMEOUT_MS.anthropic = 1500; TIMEOUT_MS.google = 1500; });
   mode = 'hangopenai';
   await page.click('.mode[data-mode="debate"]');
   await page.fill('#input', '타임아웃 테스트'); await page.click('#send');
@@ -244,17 +250,63 @@ const ok = (msg) => console.log(`  ok  ${msg}`);
   // 결론은 다시 기획(OpenAI)이 맡으므로 이 목에서는 결론도 시간 초과가 정상. 2·3단계가 살아 있어야 한다.
   if (toCards.length < 4 || toCards.slice(1,3).some(t=>/시간 초과|중지/.test(t))) note('BUG', '한 단계 타임아웃이 다음 단계까지 끊음 (요청 묶음 단위 타임아웃)');
   else ok('단계별 타임아웃 격리 (2·3단계 정상, 결론은 OpenAI 무응답이라 시간 초과가 정상)');
-  await page.evaluate(() => { REQUEST_TIMEOUT_MS = 180000; });
+  await page.evaluate(() => { TIMEOUT_MS.openai = 600000; TIMEOUT_MS.anthropic = 600000; TIMEOUT_MS.google = 300000; });
   await page.click('.mode[data-mode="parallel"]');
   mode = 'ok';
 
   // 11d) 종료된 모델명을 설정에 넣으면 자동 교체, 종료 예정 모델은 경고
-  await page.click('#btnSettings'); await page.fill('#m_anthropic', 'claude-3-5-sonnet-20241022'); await page.fill('#m_google', 'gemini-2.5-flash'); await page.click('#saveSettings'); await wait(300);
+  const sunset = await page.evaluate(() => { const k = Object.keys(SUNSET_MODELS)[0]; return k ? { model:k, until:SUNSET_MODELS[k].until } : null; });
+  await page.click('#btnSettings'); await page.fill('#m_anthropic', 'claude-3-5-sonnet-20241022'); if (sunset) await page.fill('#m_google', sunset.model); await page.click('#saveSettings'); await wait(300);
   S = await state();
   if (S.models.anthropic !== 'claude-opus-5-5') note('BUG', '종료된 Anthropic 모델명이 자동 교체되지 않음: ' + S.models.anthropic); else ok('종료 모델 자동 교체');
   const sunsetToast = await page.textContent('#toast');
-  if (!/2026-10-16/.test(sunsetToast)) note('BUG', '종료 예정 모델(gemini-2.5-flash) 경고 토스트 없음: ' + sunsetToast); else ok('종료 예정 경고: ' + sunsetToast);
+  if (sunset && !sunsetToast.includes(sunset.until)) note('BUG', '종료 예정 모델(' + sunset.model + ') 경고 토스트 없음: ' + sunsetToast); else ok('종료 예정 경고: ' + sunsetToast);
   await page.click('#btnSettings'); await page.fill('#m_google', ''); await page.click('#saveSettings'); await wait(300);
+
+  // 11e) 더블탭은 중지가 아니다 (지연 목)
+  mode = 'slow';
+  await page.fill('#input', '더블탭 테스트'); await page.click('#send'); await wait(120); await page.click('#send');
+  await page.waitForFunction(() => document.querySelectorAll('.turn:last-child .card .copy:not([hidden])').length === 3, null, {timeout:8000}).catch(()=>{});
+  const dbl = await page.$$eval('.turn:last-child .card .body', els=>els.map(e=>e.textContent.trim().slice(0,20)));
+  if (dbl.some(t=>/중지/.test(t))) note('BUG', '보내기 버튼 더블탭이 요청을 중지시킴: ' + JSON.stringify(dbl)); else ok('더블탭 무시 (카드 3장 정상)');
+  // 11f) 진행 중 다른 프로젝트로 갔다 돌아오면 답이 화면에 보여야 하고, 다른 프로젝트에서 ■ 는 남의 요청을 끊지 않는다
+  await page.evaluate(()=>closeSheets()); await page.click('#strip'); await page.fill('#newProjName', 'P2'); await page.press('#newProjName','Enter'); await wait(200);
+  await page.evaluate(()=>closeSheets()); await page.click('#strip'); await page.click('.proj .nm >> nth=0'); await wait(200);
+  mode = 'slow';
+  await page.fill('#input', '전환 복귀 테스트'); await page.click('#send'); await wait(200);
+  await page.evaluate(()=>closeSheets()); await page.click('#strip'); await page.click('.proj .nm >> nth=1'); await wait(200); // P2 로
+  await page.click('#send'); await wait(100); // P2 에서 ■ 누름 → 끊기면 안 됨
+  await page.evaluate(()=>closeSheets()); await page.click('#strip'); await page.click('.proj .nm >> nth=0'); await wait(200); // 복귀
+  await page.waitForFunction(() => !document.querySelector('#send.stop'), null, {timeout:8000}).catch(()=>{});
+  await wait(200);
+  const back = await page.$$eval('.turn:last-child .card .body', els=>els.map(e=>e.textContent.trim().slice(0,20)));
+  if (back.length !== 3) note('BUG', '전환 복귀 후 답 카드가 화면에 없음 (' + back.length + '장)');
+  else if (back.some(t=>/중지/.test(t))) note('BUG', '다른 프로젝트에서 누른 ■ 가 원래 프로젝트 요청을 끊음');
+  else ok('전환 복귀 시 답 표시 + 타 프로젝트 ■ 무시');
+  await page.evaluate(()=>closeSheets()); await page.click('#strip'); await page.click('.proj .del >> nth=1'); await wait(200); await page.evaluate(()=>closeSheets());
+  // 11g) 429 → 자동 재시도 1회
+  mode = '429once'; apiLog.length = 0;
+  await page.fill('#input', '재시도 테스트'); await page.click('#send');
+  await page.waitForFunction(() => document.querySelectorAll('.turn:last-child .card .copy:not([hidden])').length === 3, null, {timeout:15000}).catch(()=>{});
+  const retryCards = await page.$$eval('.turn:last-child .card .body', els=>els.map(e=>e.textContent.trim().slice(0,12)));
+  if (retryCards.some(t=>/HTTP 429/.test(t))) note('BUG', '429 후 자동 재시도 없음: ' + JSON.stringify(retryCards));
+  else if (apiLog.filter(a=>a.p==='openai').length < 2) note('BUG', '429 재시도 요청이 나가지 않음');
+  else ok('429 자동 재시도 1회');
+  // 11h) 저장 실패 시 "저장했습니다" 가 아니라 실패 안내
+  await page.evaluate(() => { const o = Storage.prototype.setItem; window.__setItem = o; Storage.prototype.setItem = function(){ throw new DOMException('quota','QuotaExceededError'); }; });
+  await page.click('#btnBoard'); await page.fill('#p_now', '저장실패'); await page.click('#saveBoard'); await wait(200);
+  const failToast = await page.textContent('#toast');
+  if (/저장했습니다/.test(failToast) || !/저장 실패|공간/.test(failToast)) note('BUG', '저장 실패인데 토스트가 "' + failToast + '"');
+  else ok('저장 실패 안내: ' + failToast);
+  await page.evaluate(() => { Storage.prototype.setItem = window.__setItem; });
+  await page.click('#btnBoard'); await page.fill('#p_now', '매입·매출 계산'); await page.click('#saveBoard'); await wait(200);
+  // 11i) 미종료 코드펜스 → <pre> 로 닫힌다
+  mode = 'openfence';
+  await page.fill('#input', '펜스 테스트'); await page.click('#send');
+  await page.waitForFunction(() => document.querySelectorAll('.turn:last-child .card .copy:not([hidden])').length === 3, null, {timeout:8000}).catch(()=>{});
+  const fence = await page.$eval('.turn:last-child .card .body', e=>e.innerHTML);
+  if (!/<pre><code>const x = 1;\n  if \(x\) \{/.test(fence)) note('BUG', '미종료 코드펜스가 <pre> 로 렌더되지 않음: ' + fence.slice(0,160)); else ok('미종료 코드펜스 자동 닫기');
+  mode = 'ok';
 
   // 12) 프로젝트 보드
   await page.click('#btnBoard'); await wait(300);
@@ -360,6 +412,9 @@ const ok = (msg) => console.log(`  ok  ${msg}`);
   await page.waitForFunction(() => document.querySelectorAll('.turn:last-child .card .copy:not([hidden])').length === 3, null, {timeout:5000}).catch(()=>{});
   S = await state();
   console.log('  로그 개수(60 제한):', S.projects[0].log.length, '첫 항목 role:', S.projects[0].log[0].role);
+  if (S.projects[0].log.length > 60 || S.projects[0].log[0].role !== 'user') note('BUG', '로그 60개 절단 또는 첫 항목 정리 실패');
+  const shownTurns = await page.$$eval('.turn', e=>e.length), savedTurns = S.projects[0].log.filter(e=>e.role==='user').length;
+  if (shownTurns !== savedTurns) note('BUG', '절단 후 화면 턴 수(' + shownTurns + ') ≠ 저장 턴 수(' + savedTurns + ')');
   await page.reload(); await wait(300);
   if (errors.length) note('BUG', '페이지 오류: ' + errors.join(' || '));
 
