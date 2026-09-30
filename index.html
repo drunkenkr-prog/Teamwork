@@ -6,10 +6,10 @@
 <meta name="theme-color" content="#12151c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>AI 개발팀 콘솔</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" media="print" onload="this.media='all'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <style>
 :root{
   --bg:#12151c; --surface:#1a1f2b; --surface2:#202634; --line:#2b3242;
@@ -85,6 +85,7 @@ button{cursor:pointer;border:none;background:none}
 .composer textarea:focus{outline:none;border-color:var(--build)}
 .send{width:46px;height:44px;border-radius:12px;flex:0 0 auto;background:var(--build);color:#0d1017;font-weight:700;font-size:18px}
 .send:disabled{background:var(--line);color:var(--dim)}
+.send.stop{background:var(--danger);color:#0d1017}
 
 .scrim{position:fixed;inset:0;background:rgba(6,8,12,.66);opacity:0;pointer-events:none;transition:.2s;z-index:9}
 .scrim.on{opacity:1;pointer-events:auto}
@@ -146,8 +147,8 @@ textarea.f{resize:vertical;min-height:72px;line-height:1.5;font-size:13.5px}
     <button class="icon-btn" id="btnSettings" aria-label="설정">⚙</button>
   </div>
   <div class="modes" role="tablist">
-    <button class="mode on" data-mode="parallel" role="tab">병렬 답변<small>3인 동시</small></button>
-    <button class="mode" data-mode="debate" role="tab">팀 토론<small>기획→구현→조사→결론</small></button>
+    <button class="mode on" data-mode="parallel" role="tab" aria-selected="true">병렬 답변<small>3인 동시</small></button>
+    <button class="mode" data-mode="debate" role="tab" aria-selected="false">팀 토론<small>기획→구현→조사→결론</small></button>
   </div>
   <button class="strip" id="strip"></button>
 </header>
@@ -181,9 +182,10 @@ textarea.f{resize:vertical;min-height:72px;line-height:1.5;font-size:13.5px}
 
   <div class="field"><label>프로젝트 이름</label><input type="text" id="p_name" placeholder="예: 관 파이프 상사"></div>
   <div class="row">
-    <div class="field"><label>진행률 %</label><input type="number" id="p_prog" min="0" max="100" value="0"></div>
+    <div class="field"><label>진행률 %</label><input type="number" id="p_prog" min="0" max="100" step="1" inputmode="numeric" value="0"></div>
     <div class="field"><label>엔진 / 스택</label><input type="text" id="p_stack" placeholder="Unity 6 / C#"></div>
   </div>
+  <div class="field"><label>규칙 · 수식 (항상 맨 앞에 전달)</label><textarea class="f" id="p_rules" placeholder="바뀌지 않는 사실: 게임 규칙, 핵심 계산식, 단위·반올림, 이미 결정된 사항&#10;예: 판매가 ≥ 원가 + 수수료 5%. 흥정 폭 ±15%. 원 단위 반올림은 합계에서 한 번."></textarea></div>
   <div class="field"><label>지금 하는 일</label><textarea class="f" id="p_now" placeholder="예: 매입·매출 계산 로직 구현 중"></textarea></div>
   <div class="field"><label>다음 목표</label><textarea class="f" id="p_next" placeholder="예: 거래처 AI 흥정 시스템"></textarea></div>
 
@@ -202,24 +204,24 @@ textarea.f{resize:vertical;min-height:72px;line-height:1.5;font-size:13.5px}
 <section class="sheet" id="sheetSettings" aria-label="설정">
   <div class="grab"></div>
   <div class="sheet-head"><h2>설정</h2><button class="icon-btn close">✕</button></div>
-  <p class="hint">API 키는 이 기기에만 저장되고 서버로 전송되지 않습니다. 모든 프로젝트가 같은 키를 씁니다.</p>
+  <p class="hint">API 키는 이 기기에만 저장되고 각 AI 회사 서버로만 전송됩니다. 모든 프로젝트가 같은 키를 씁니다. 모델명을 비우면 기본값을 씁니다.</p>
 
   <div class="member" style="--c:var(--plan)">
     <h3>기획 · ChatGPT</h3>
     <div class="field"><label>OpenAI API 키</label><input type="password" id="k_openai" placeholder="sk-..." autocomplete="off"></div>
-    <div class="field"><label>모델</label><input type="text" id="m_openai"></div>
+    <div class="field"><label>모델</label><input type="text" id="m_openai" placeholder="gpt-5.2" autocapitalize="off" spellcheck="false"></div>
     <div class="field"><label>역할 지시문</label><textarea class="f" id="r_openai"></textarea></div>
   </div>
   <div class="member" style="--c:var(--build)">
     <h3>구현 · Claude</h3>
     <div class="field"><label>Anthropic API 키</label><input type="password" id="k_anthropic" placeholder="sk-ant-..." autocomplete="off"></div>
-    <div class="field"><label>모델</label><input type="text" id="m_anthropic"></div>
+    <div class="field"><label>모델</label><input type="text" id="m_anthropic" placeholder="claude-opus-5-5" autocapitalize="off" spellcheck="false"></div>
     <div class="field"><label>역할 지시문</label><textarea class="f" id="r_anthropic"></textarea></div>
   </div>
   <div class="member" style="--c:var(--scout)">
     <h3>조사 · Gemini</h3>
     <div class="field"><label>Google AI Studio 키</label><input type="password" id="k_google" placeholder="AIza..." autocomplete="off"></div>
-    <div class="field"><label>모델</label><input type="text" id="m_google"></div>
+    <div class="field"><label>모델</label><input type="text" id="m_google" placeholder="gemini-3.5-flash" autocapitalize="off" spellcheck="false"></div>
     <div class="field"><label>역할 지시문</label><textarea class="f" id="r_google"></textarea></div>
   </div>
 
@@ -231,9 +233,15 @@ textarea.f{resize:vertical;min-height:72px;line-height:1.5;font-size:13.5px}
 <script>
 /* ══════════ 저장소 ══════════ */
 const mem = {};
+let storeBroken = false;
+const SAVE_FAIL_MSG = '저장 실패: 저장 공간이 부족합니다. 오래된 대화 기록을 지워주세요';
 const store = {
   get(k){ try{ return localStorage.getItem(k); }catch(e){ return mem[k] ?? null; } },
-  set(k,v){ try{ localStorage.setItem(k,v); }catch(e){ mem[k]=v; } }
+  /* 성공 true / 실패 false. 실패 시 메모리에만 남으므로 새로고침하면 사라진다 — 호출부가 반드시 알린다 */
+  set(k,v){
+    try{ localStorage.setItem(k,v); storeBroken = false; return true; }
+    catch(e){ mem[k]=v; storeBroken = true; return false; }
+  }
 };
 
 const AGENTS = {
@@ -242,15 +250,58 @@ const AGENTS = {
   google   : { name:'조사', sub:'Gemini',  color:'var(--scout)' }
 };
 
-const DEF_MODELS = { openai:'gpt-4o', anthropic:'claude-sonnet-4-5', google:'gemini-2.0-flash' };
+/* 기본 모델 (2026-09 기준 서비스 중인 ID) */
+const DEF_MODELS = { openai:'gpt-5.2', anthropic:'claude-opus-5-5', google:'gemini-3.5-flash' };
+/* 이미 서비스가 종료된 모델 → 자동 교체 */
+const DEAD_MODELS = {
+  'gemini-2.0-flash':'gemini-3.5-flash', 'gemini-2.0-flash-001':'gemini-3.5-flash',
+  'gemini-2.0-flash-lite':'gemini-3.5-flash', 'gemini-2.0-flash-lite-001':'gemini-3.5-flash',
+  'chatgpt-4o-latest':'gpt-5.2',
+  'claude-opus-4-1':'claude-opus-5-5', 'claude-opus-4-1-20250805':'claude-opus-5-5',
+  'claude-3-7-sonnet-20250219':'claude-opus-5-5', 'claude-3-5-haiku-20241022':'claude-opus-5-5',
+  'claude-3-opus-20240229':'claude-opus-5-5', 'claude-3-5-sonnet-20241022':'claude-opus-5-5',
+  'claude-3-5-sonnet-20240620':'claude-opus-5-5', 'claude-3-sonnet-20240229':'claude-opus-5-5',
+  'claude-2.1':'claude-opus-5-5', 'claude-2.0':'claude-opus-5-5'
+};
+/* 종료가 예고된 모델 → 날짜가 가까우면 경고 (3번 조사 팀장이 갱신) */
+const SUNSET_MODELS = {
+  'gemini-2.5-flash':{ until:'2026-10-16', next:'gemini-3.5-flash' }
+};
+function sunsetWarnings(){
+  const out = [], now = Date.now(), soon = 30*86400000;
+  for(const a of Object.keys(AGENTS)){
+    const m = S.models[a], su = SUNSET_MODELS[m];
+    if(!su) continue;
+    const left = new Date(su.until+'T00:00:00Z').getTime() - now;
+    if(left < soon) out.push(AGENTS[a].sub+' 모델 '+m+'은(는) '+su.until+(left<0?'에 종료됨':'에 종료 예정')+' → '+su.next+' 권장');
+  }
+  return out;
+}
 const DEF_ROLES = {
   openai:'너는 1인 게임 개발팀의 디렉터다. 기획, 게임 구조 설계, UI/UX, 우선순위 결정, 전체 총괄을 맡는다. 항상 실행 가능한 결론을 내고, 왜 그 선택인지 한두 줄로 밝혀라. 길게 늘어놓지 말고 핵심만 써라.',
-  anthropic:'너는 이 팀의 시니어 엔지니어다. 실제 코드 작성, 리팩토링, 버그 수정, 성능 최적화를 맡는다. 코드는 바로 붙여넣어 돌아가도록 완성형으로 쓰고, 수정 지점을 명확히 표시하라. 위험한 부분은 짧게 경고하라.',
+  anthropic:'너는 이 팀의 시니어 엔지니어다. 실제 코드 작성, 리팩토링, 버그 수정, 성능 최적화를 맡는다. 코드는 바로 붙여넣어 돌아가도록 완성형으로 쓰고, 수정 지점을 명확히 표시하라. 돈·수량 계산 코드는 역마진(판매가가 원가+수수료보다 낮아지는 경우)과 0·음수·반올림 경계값을 반드시 막고, 입력→기대값 테스트 벡터 3개 이상을 손으로 계산해 표로 보여라. 위험한 부분은 짧게 경고하라.',
   google:'너는 이 팀의 리서처다. 최신 기술·에셋·플러그인·레퍼런스 조사와 대안 제시를 맡는다. 구체적인 이름과 버전을 밝히고, 항상 대안을 2개 이상 제시하며 각각의 장단점을 한 줄로 비교하라.'
 };
 
+/* 요청 하나당 타임아웃 (토론 모드는 단계마다 따로). 스트리밍이 없으므로 긴 답변(max_tokens 16000)을 기다릴 만큼 넉넉하게 — 중지 버튼이 있다 */
+const TIMEOUT_MS = { openai:600000, anthropic:600000, google:300000 };
+const LOG_LIMIT = 60;
+
 const uid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
-const blankProject = (name) => ({ id:uid(), name:name||'새 프로젝트', prog:0, stack:'', now:'', next:'', todos:[], log:[] });
+const clampProg = v => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0; };
+const blankProject = (name) => ({ id:uid(), name:name||'새 프로젝트', prog:0, stack:'', rules:'', now:'', next:'', todos:[], log:[] });
+/* 저장 데이터가 깨져 있어도 앱이 죽지 않도록 정규화 */
+function normalizeProject(p){
+  const b = blankProject();
+  const o = { ...b, ...(p && typeof p==='object' ? p : {}) };
+  o.id = typeof o.id==='string' && o.id ? o.id : b.id;
+  o.name = String(o.name || '새 프로젝트');
+  o.prog = clampProg(o.prog);
+  o.stack = String(o.stack||''); o.rules = String(o.rules||''); o.now = String(o.now||''); o.next = String(o.next||'');
+  o.todos = Array.isArray(o.todos) ? o.todos.filter(t=>t && typeof t.text==='string').map(t=>({ text:t.text, done:!!t.done })) : [];
+  o.log = Array.isArray(o.log) ? o.log.filter(e=>e && typeof e.text==='string' && (e.role==='user' || (e.role==='ai' && AGENTS[e.agent]))) : [];
+  return o;
+}
 
 /* ══════════ 불러오기 (구버전 자동 이전) ══════════ */
 function loadState(){
@@ -266,24 +317,27 @@ function loadState(){
     current:null
   };
 
-  if(o){
+  if(o && typeof o==='object'){
     Object.assign(S.keys,   o.keys   || {});
     Object.assign(S.models, o.models || {});
     Object.assign(S.roles,  o.roles  || {});
-    S.mode = o.mode || S.mode;
+    S.mode = o.mode === 'debate' ? 'debate' : 'parallel';
 
     if(Array.isArray(o.projects) && o.projects.length){
-      S.projects = o.projects.map(p => ({ ...blankProject(), ...p }));
+      S.projects = o.projects.map(normalizeProject);
       S.current  = o.current;
     }else{
       /* 구버전 데이터 → 프로젝트 1개로 이전 */
       const old = o.project || {};
-      const p = blankProject(old.name || '기본 프로젝트');
-      p.prog = old.prog || 0; p.stack = old.stack || '';
-      p.now = old.now || '';  p.next = old.next || '';
-      p.todos = old.todos || []; p.log = o.log || [];
-      S.projects = [p]; S.current = p.id;
+      S.projects = [normalizeProject({ ...old, name: old.name || '기본 프로젝트', log: o.log })];
+      S.current = S.projects[0].id;
     }
+  }
+  for(const a of Object.keys(AGENTS)){
+    S.keys[a] = String(S.keys[a] || '');
+    S.models[a] = String(S.models[a] || '').trim() || DEF_MODELS[a];
+    if(DEAD_MODELS[S.models[a]]) S.models[a] = DEAD_MODELS[S.models[a]];
+    S.roles[a] = String(S.roles[a] || '').trim() || DEF_ROLES[a];
   }
 
   if(!S.projects.length){ S.projects = [blankProject('기본 프로젝트')]; }
@@ -294,15 +348,15 @@ function loadState(){
 let S = loadState();
 const save = () => store.set('aiteam.v1', JSON.stringify(S));
 const cur  = () => S.projects.find(p => p.id === S.current) || S.projects[0];
-save();
 
 /* ══════════ 유틸 ══════════ */
 const $  = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
-const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 
 function md(t){
-  let h = esc(t);
+  let h = esc(t).replace(/\r\n?/g,'\n');
+  if((h.match(/```/g)||[]).length % 2 === 1) h += '\n```';   // 잘린 답변의 열린 코드펜스를 닫는다
   const blocks = [];
   h = h.replace(/```(\w*)\n?([\s\S]*?)```/g, (_,l,c) => {
     blocks.push('<pre><code>'+c.replace(/\n$/,'')+'</code></pre>');
@@ -310,11 +364,24 @@ function md(t){
   });
   h = h.replace(/`([^`\n]+)`/g,'<code>$1</code>')
        .replace(/^#{1,4}\s+(.+)$/gm,'<h3>$1</h3>')
-       .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
-       .replace(/^[-*]\s+(.+)$/gm,'<li>$1</li>');
-  h = h.replace(/(<li>[\s\S]*?<\/li>)(?!\s*<li>)/g,'<ul>$1</ul>');
-  h = h.split('\n\n').map(p => /^<(h3|ul|pre)/.test(p.trim()) ? p : '<p>'+p.replace(/\n/g,'<br>')+'</p>').join('');
-  return h.replace(/\u0000(\d+)\u0000/g,(_,i)=>blocks[i]);
+       .replace(/\*\*([^*\n]+)\*\*/g,'<strong>$1</strong>')
+       .replace(/^\s*[-*•]\s+(.+)$/gm,'<li>$1</li>');
+  /* 줄 단위로 블록을 조립: 목록·제목·코드블록이 <p> 안에 갇히지 않게 */
+  const out = [];
+  h.split('\n\n').forEach(par => {
+    let text = [], lis = [];
+    const flushText = () => { if(text.length){ out.push('<p>'+text.join('<br>')+'</p>'); text = []; } };
+    const flushLis  = () => { if(lis.length){ out.push('<ul>'+lis.join('')+'</ul>'); lis = []; } };
+    par.split('\n').forEach(line => {
+      const s = line.trim();
+      if(!s) return;
+      if(/^<li>/.test(s)){ flushText(); lis.push(s); }
+      else if(/^(<h3>|\u0000)/.test(s)){ flushText(); flushLis(); out.push(s); }
+      else { flushLis(); text.push(s); }
+    });
+    flushText(); flushLis();
+  });
+  return out.join('').replace(/\u0000(\d+)\u0000/g,(_,i)=>blocks[i]);
 }
 
 let toastT;
@@ -323,67 +390,143 @@ function toast(msg){
   clearTimeout(toastT); toastT = setTimeout(()=>t.classList.remove('on'), 1800);
 }
 
+save();
+
 /* ══════════ API ══════════ */
-async function callOpenAI(sys, usr){
-  const r = await fetch('https://api.openai.com/v1/chat/completions',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.keys.openai},
-    body:JSON.stringify({ model:S.models.openai, messages:[{role:'system',content:sys},{role:'user',content:usr}] })
-  });
-  const d = await r.json();
-  if(!r.ok) throw new Error(d.error?.message || ('HTTP '+r.status));
-  return d.choices[0].message.content;
+let aborter = null;   // 진행 중인 요청 묶음의 AbortController
+
+/* 응답 본문이 JSON이 아니어도(프록시 502 HTML 등) 사람이 읽을 수 있는 오류로 바꾼다 */
+async function readJson(r){
+  const raw = await r.text();
+  let d = null;
+  try{ d = JSON.parse(raw); }catch(e){}
+  if(!r.ok){
+    const detail = d?.error?.message || d?.error?.type || d?.message
+                 || raw.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,160);
+    const e = new Error('HTTP '+r.status+(detail ? ' · '+detail : ''));
+    e.status = r.status;
+    /* Retry-After 헤더(초) 또는 Gemini 본문의 retryDelay("41s") */
+    const ra = Number(r.headers.get('retry-after'));
+    const rd = /(\d+(?:\.\d+)?)s/.exec(JSON.stringify(d?.error?.details||'') + ' ' + (d?.error?.message||''));
+    e.retryAfterMs = Number.isFinite(ra) && ra > 0 ? ra*1000 : (rd ? Math.ceil(parseFloat(rd[1])*1000) : 0);
+    throw e;
+  }
+  if(!d || typeof d!=='object') throw new Error('응답을 해석할 수 없습니다 (JSON 아님)');
+  return d;
 }
-async function callAnthropic(sys, usr){
-  const r = await fetch('https://api.anthropic.com/v1/messages',{
-    method:'POST',
-    headers:{
-      'Content-Type':'application/json',
-      'x-api-key':S.keys.anthropic,
-      'anthropic-version':'2023-06-01',
-      'anthropic-dangerous-direct-browser-access':'true'
-    },
-    body:JSON.stringify({ model:S.models.anthropic, max_tokens:4096, system:sys, messages:[{role:'user',content:usr}] })
-  });
-  const d = await r.json();
-  if(!r.ok) throw new Error(d.error?.message || ('HTTP '+r.status));
-  return d.content.filter(b=>b.type==='text').map(b=>b.text).join('\n');
+function post(url, headers, body, signal){
+  return fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json', ...headers }, body:JSON.stringify(body), signal });
 }
-async function callGemini(sys, usr){
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/'
-            + encodeURIComponent(S.models.google) + ':generateContent?key=' + encodeURIComponent(S.keys.google);
-  const r = await fetch(url,{
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ system_instruction:{ parts:[{text:sys}] }, contents:[{ role:'user', parts:[{text:usr}] }] })
-  });
-  const d = await r.json();
-  if(!r.ok) throw new Error(d.error?.message || ('HTTP '+r.status));
+/* 요청 하나짜리 신호: 자체 타임아웃 + 사용자 중지(aborter) 둘 다 반영 */
+function requestSignal(agent){
+  const c = new AbortController();
+  const ms = TIMEOUT_MS[agent] || 300000;
+  const t = setTimeout(()=>c.abort('timeout'), ms);
+  const onStop = ()=>c.abort('user');
+  const parent = aborter?.signal;
+  if(parent){ if(parent.aborted) onStop(); else parent.addEventListener('abort', onStop, { once:true }); }
+  return { signal:c.signal, ms, done(){ clearTimeout(t); parent?.removeEventListener('abort', onStop); } };
+}
+function humanError(err, signal, ms){
+  /* abort(reason) 로 끊으면 브라우저에 따라 AbortError 대신 reason 값 자체가 던져진다 */
+  if(signal?.aborted || err?.name === 'AbortError') return signal?.reason === 'timeout' ? '응답 시간 초과 ('+Math.round((ms||0)/1000)+'초). 다시 시도해주세요.' : '중지했습니다.';
+  if(/Failed to fetch|NetworkError|Load failed/i.test(err?.message||'')) return '네트워크 오류: 인터넷 연결 또는 브라우저 차단(CORS)을 확인해주세요.';
+  return err?.message || String(err);
+}
+
+async function callOpenAI(sys, usr, signal){
+  const r = await post('https://api.openai.com/v1/chat/completions',
+    { 'Authorization':'Bearer '+S.keys.openai },
+    { model:S.models.openai, max_completion_tokens:16000, messages:[{role:'system',content:sys},{role:'user',content:usr}] }, signal);
+  const d = await readJson(r);
+  const m = d.choices?.[0]?.message;
+  if(!m) throw new Error('응답이 비어 있습니다.');
+  if(m.refusal) throw new Error('모델이 답변을 거부했습니다: '+m.refusal);
+  if(typeof m.content !== 'string' || !m.content.trim()) throw new Error('응답 본문이 비어 있습니다.');
+  let out = m.content;
+  if(d.choices[0].finish_reason === 'length') out += '\n\n_(출력 한도에 걸려 뒷부분이 잘렸습니다)_';
+  return out;
+}
+async function callAnthropic(sys, usr, signal){
+  const r = await post('https://api.anthropic.com/v1/messages',
+    { 'x-api-key':S.keys.anthropic, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
+    { model:S.models.anthropic, max_tokens:16000, system:sys, messages:[{role:'user',content:usr}] }, signal);
+  const d = await readJson(r);
+  if(d.stop_reason === 'refusal'){
+    const why = d.stop_details?.category ? ' ('+d.stop_details.category+')' : '';
+    throw new Error('모델이 안전 정책으로 답변을 거부했습니다'+why+'. 질문을 바꿔 다시 시도해주세요.');
+  }
+  let out = (d.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+  if(!out.trim()) throw new Error('응답 본문이 비어 있습니다.');
+  if(d.stop_reason === 'max_tokens') out += '\n\n_(출력 한도 max_tokens에 걸려 뒷부분이 잘렸습니다)_';
+  return out;
+}
+async function callGemini(sys, usr, signal){
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(S.models.google) + ':generateContent';
+  const r = await post(url, { 'x-goog-api-key':S.keys.google },
+    { system_instruction:{ parts:[{text:sys}] }, contents:[{ role:'user', parts:[{text:usr}] }], generationConfig:{ maxOutputTokens:16000 } }, signal);
+  const d = await readJson(r);
+  if(d.promptFeedback?.blockReason) throw new Error('요청이 차단되었습니다: '+d.promptFeedback.blockReason);
   const c = d.candidates?.[0];
-  if(!c) throw new Error('응답이 비어 있습니다. 안전 필터에 걸렸을 수 있습니다.');
-  return c.content.parts.map(p=>p.text||'').join('');
+  const parts = c?.content?.parts;
+  if(!c || !Array.isArray(parts)){
+    const why = c?.finishReason ? ' (finishReason: '+c.finishReason+')' : '';
+    throw new Error('응답이 비어 있습니다'+why+'. 안전 필터에 걸렸을 수 있습니다.');
+  }
+  let out = parts.filter(p=>!p.thought).map(p=>p.text||'').join('');
+  if(!out.trim()) throw new Error('응답 본문이 비어 있습니다.');
+  if(c.finishReason === 'MAX_TOKENS') out += '\n\n_(출력 한도에 걸려 뒷부분이 잘렸습니다)_';
+  return out;
 }
 const CALL = { openai:callOpenAI, anthropic:callAnthropic, google:callGemini };
-function ask(agent, sys, usr){
-  if(!S.keys[agent]) return Promise.reject(new Error(AGENTS[agent].sub+' 키가 설정에 없습니다.'));
-  return CALL[agent](sys, usr);
+const RETRY_STATUS = new Set([408, 425, 429, 500, 502, 503, 504, 529]);
+const sleep = (ms, signal) => new Promise((res, rej) => {
+  const t = setTimeout(res, ms);
+  signal?.addEventListener('abort', ()=>{ clearTimeout(t); rej(signal.reason || 'user'); }, { once:true });
+});
+async function ask(agent, sys, usr, onRetry){
+  if(!S.keys[agent]) throw new Error(AGENTS[agent].sub+' 키가 설정에 없습니다.');
+  const rs = requestSignal(agent);
+  try{
+    try{ return await CALL[agent](sys, usr, rs.signal); }
+    catch(err){
+      /* 과부하(429/529)·일시 장애·네트워크 끊김은 한 번만 자동 재시도. 중지·타임아웃은 재시도하지 않는다 */
+      const transient = !rs.signal.aborted && (RETRY_STATUS.has(err?.status) || /Failed to fetch|NetworkError|Load failed/i.test(err?.message||''));
+      if(!transient) throw err;
+      const wait = Math.min(Math.max(err?.retryAfterMs || 8000, 3000), 45000);
+      onRetry?.(wait);
+      await sleep(wait, rs.signal);
+      return await CALL[agent](sys, usr, rs.signal);
+    }
+  }
+  catch(err){ throw new Error(humanError(err, rs.signal, rs.ms)); }
+  finally{ rs.done(); }
 }
 
 /* ══════════ 프롬프트 ══════════ */
-function contextBlock(){
-  const p = cur(), L = [];
+function contextBlock(p){
+  const L = [];
   if(p.name)  L.push('프로젝트: '+p.name);
   if(p.stack) L.push('스택: '+p.stack);
+  if(p.rules) L.push('규칙·수식 (바뀌지 않는 사실, 이에 어긋나면 지적하라):\n'+p.rules);
   if(p.prog)  L.push('진행률: '+p.prog+'%');
   if(p.now)   L.push('지금 하는 일: '+p.now);
   if(p.next)  L.push('다음 목표: '+p.next);
   const open = p.todos.filter(t=>!t.done).map(t=>'- '+t.text);
   if(open.length) L.push('남은 할 일:\n'+open.join('\n'));
+  /* 이번 질문은 [요청]에 따로 들어가므로, 그 이전 질문 3개만 */
   const recent = p.log.filter(e=>e.role==='user').slice(-3).map(e=>'- '+e.text.slice(0,140));
   if(recent.length) L.push('최근 논의:\n'+recent.join('\n'));
   return L.length ? '[프로젝트 현황]\n'+L.join('\n')+'\n\n' : '';
 }
 function sysFor(agent){
   return S.roles[agent] + '\n\n너는 세 명(기획/구현/조사)으로 이루어진 팀의 한 명이다. 네 담당 영역에 집중하고, 답변은 한국어로, 군더더기 없이 써라.';
+}
+const CALC_WORDS = /가격|매입|매출|수수료|흥정|마진|할인|재고|잔고|원가|판매|계산|수식|세금|환율|price|margin|discount|fee/i;
+/* 검수 지시. 보드에 규칙·수식이 있으면 그것이 기준이고, 없을 때만 기본 역마진 식을 쓴다 (기준이 두 개가 되지 않게) */
+function reviewNote(p){
+  const basis = p && p.rules ? '[규칙·수식] 필드를 기준으로 역마진(판매가가 원가·수수료·세금을 못 덮는 경우)과 매입 상한' : '역마진(판매가 < 원가+수수료), 매입 상한(매입가 > 예상 판매가−수수료−목표 마진)';
+  return '결론을 내기 전에 검수하라: (1) 계산식·가격 로직이 있으면 '+basis+', 흥정 양방향 한계, 0·음수·반올림 경계값, 단위 불일치를 점검하고, 입력→기대값 테스트 벡터 3개 이상을 손으로 계산해 표로 보여라 (2) 원래 요청에서 빠뜨린 항목이 없는지 확인해 있으면 미달 항목을 명시하고 누가 보완할지 지정하라.';
 }
 
 /* ══════════ 렌더 ══════════ */
@@ -406,7 +549,7 @@ function cardHTML(agent, seq){
   const a = AGENTS[agent];
   return `<div class="card" style="--c:${a.color}">
     <div class="card-head">
-      ${seq?`<span class="seq">${seq}</span>`:''}
+      ${seq?`<span class="seq">${esc(seq)}</span>`:''}
       <span class="who">${a.name}</span><span class="tag">${a.sub}</span>
       <button class="copy" hidden>복사</button>
     </div>
@@ -420,8 +563,10 @@ function fillCard(card, text, isError){
   if(!isError){
     const btn = card.querySelector('.copy');
     btn.hidden = false;
-    btn.onclick = () => navigator.clipboard?.writeText(text)
-      .then(()=>toast('복사했습니다'), ()=>toast('복사할 수 없습니다'));
+    btn.onclick = () => {
+      if(!navigator.clipboard?.writeText){ toast('이 브라우저에서는 복사할 수 없습니다'); return; }
+      navigator.clipboard.writeText(text).then(()=>toast('복사했습니다'), ()=>toast('복사할 수 없습니다'));
+    };
   }
 }
 
@@ -457,79 +602,121 @@ function renderStrip(){
 
 /* ══════════ 전송 ══════════ */
 let busy = false;
+let busySince = 0;        // 전송 직후 짧은 시간 동안은 ■(중지)를 무시한다 — 모바일 더블탭·손떨림 방지
+let busyProjectId = null; // 답변을 기다리는 프로젝트
+const STOP_GUARD_MS = 700;
+function setBusy(on){
+  busy = on;
+  const b = $('#send');
+  b.classList.toggle('stop', on);
+  b.textContent = on ? '■' : '↑';
+  b.setAttribute('aria-label', on ? '중지' : '보내기');
+}
+function trimLog(p){
+  if(p.log.length > LOG_LIMIT) p.log = p.log.slice(-LOG_LIMIT);
+  /* 잘린 첫머리가 답변부터 시작하지 않게 */
+  while(p.log.length && p.log[0].role !== 'user') p.log.shift();
+}
+
 async function send(){
+  if(busy){
+    if(Date.now() - busySince < STOP_GUARD_MS) return;                     // 더블탭은 중지가 아니다
+    if(cur().id !== busyProjectId){ const bp = S.projects.find(p=>p.id===busyProjectId); toast('"'+(bp?bp.name:'다른 프로젝트')+'"가 답변을 기다리는 중입니다'); return; }
+    aborter?.abort('user'); return;
+  }
   const text = $('#input').value.trim();
-  if(!text || busy) return;
+  if(!text) return;
   if(!S.keys.openai && !S.keys.anthropic && !S.keys.google){
     toast('먼저 설정에서 API 키를 넣어주세요'); openSheet('#sheetSettings'); return;
   }
 
   const proj = cur();
-  busy = true; $('#send').disabled = true;
+  setBusy(true); busySince = Date.now(); busyProjectId = proj.id;
+  aborter = new AbortController();
   $('#input').value = ''; $('#input').style.height = 'auto';
 
+  const ctx = contextBlock(proj);          // 이번 질문을 넣기 전의 현황
   proj.log.push({ role:'user', text });
+  save();
   if(feed.querySelector('.empty')) feed.innerHTML = '';
   const turn = document.createElement('div');
   turn.className = 'turn';
   turn.innerHTML = '<div class="ask">'+esc(text)+'</div>';
   feed.appendChild(turn); scrollDown();
 
-  const ctx = contextBlock();
   const active = Object.keys(AGENTS).filter(a => S.keys[a]);
+  const newCard = (a, seq) => { const d = document.createElement('div'); d.innerHTML = cardHTML(a, seq); const c = d.firstElementChild; turn.appendChild(c); return c; };
+  /* 사용자가 다른 프로젝트에 갔다가 돌아오면 카드가 화면 밖(분리된 DOM)에 있다 → 로그를 다시 그린다 */
+  const record = (entry) => { proj.log.push(entry); if(!save()) toast(SAVE_FAIL_MSG); if(!turn.isConnected && cur().id === proj.id) renderLog(); };
+  const retryNote = (card) => (ms) => { const b = card.querySelector('.body'); if(b) b.innerHTML = '<div class="dots"><i></i><i></i><i></i></div><div class="hint" style="margin:0">일시 오류 · '+Math.round(ms/1000)+'초 뒤 다시 시도</div>'; };
 
   try{
     if(S.mode === 'parallel'){
       const cards = {};
-      active.forEach(a=>{
-        const d = document.createElement('div');
-        d.innerHTML = cardHTML(a, '');
-        cards[a] = d.firstElementChild;
-        turn.appendChild(cards[a]);
-      });
+      active.forEach(a=>{ cards[a] = newCard(a, ''); });
       scrollDown();
       await Promise.all(active.map(async a=>{
         try{
-          const out = await ask(a, sysFor(a), ctx + '[요청]\n' + text);
+          const selfCheck = (a==='anthropic' && CALC_WORDS.test(text)) ? '\n\n답을 끝내기 전에 스스로 검수하라: '+reviewNote(proj) : '';
+          const out = await ask(a, sysFor(a), ctx + '[요청]\n' + text + selfCheck, retryNote(cards[a]));
           fillCard(cards[a], out, false);
-          proj.log.push({ role:'ai', agent:a, text:out });
+          record({ role:'ai', agent:a, text:out });
         }catch(err){
-          fillCard(cards[a], err.message, true);
-          proj.log.push({ role:'ai', agent:a, text:err.message, error:true });
+          const msg = err.message;
+          fillCard(cards[a], msg, true);
+          record({ role:'ai', agent:a, text:msg, error:true });
         }
         scrollDown();
       }));
     }else{
-      const chain = [
-        { a:'openai',    seq:'1',   prompt:()=>ctx+'[요청]\n'+text+'\n\n먼저 방향과 구조를 잡아라. 팀원들이 이어받을 수 있게 요점을 정리해라.' },
-        { a:'anthropic', seq:'2',   prompt:t=>ctx+'[요청]\n'+text+'\n\n[기획의 초안]\n'+t.openai+'\n\n이 초안을 기술적으로 검토하고, 실제 코드와 구현 방법을 제시하라. 문제가 있으면 지적하라.' },
-        { a:'google',    seq:'3',   prompt:t=>ctx+'[요청]\n'+text+'\n\n[기획]\n'+t.openai+'\n\n[구현]\n'+t.anthropic+'\n\n두 의견을 보고 놓친 최신 기술·에셋·대안을 조사해 제시하라.' },
-        { a:'openai',    seq:'결론', prompt:t=>ctx+'[원래 요청]\n'+text+'\n\n[구현 의견]\n'+t.anthropic+'\n\n[조사 의견]\n'+t.google+'\n\n팀 의견을 종합해 최종 결정을 내려라. 무엇을 채택하고 무엇을 버리는지 밝히고, 바로 착수할 다음 단계 3개를 제시하라.' }
-      ];
+      /* 키가 없는 팀원은 건너뛰고, 앞 단계 의견이 없으면 그 사실을 알려준다 (undefined 방지) */
+      const sec = (title, t) => t ? '\n\n['+title+']\n'+t : '\n\n['+title+']\n(이 팀원은 참여하지 않았다)';
       const got = {};
+      const chain = [
+        { a:'openai',    seq:'1', prompt:()=>ctx+'[요청]\n'+text+'\n\n먼저 방향과 구조를 잡아라. 팀원들이 이어받을 수 있게 요점을 정리해라.' },
+        { a:'anthropic', seq:'2', prompt:()=>ctx+'[요청]\n'+text+sec('기획의 초안', got.openai)+'\n\n'+(got.openai?'이 초안을 기술적으로 검토하고, ':'기획 초안이 없으니 네가 방향도 짧게 잡은 뒤, ')+'실제 코드와 구현 방법을 제시하라. 문제가 있으면 지적하라.' },
+        { a:'google',    seq:'3', prompt:()=>ctx+'[요청]\n'+text+sec('기획', got.openai)+sec('구현', got.anthropic)+'\n\n앞선 의견을 보고 놓친 최신 기술·에셋·대안을 조사해 제시하라.' }
+      ];
+      /* 결론: 기획(OpenAI)이 없으면 다음 순서의 팀원이 대신 맡는다.
+         API 호출은 매번 무상태이므로 결론 담당은 자기 앞 단계 초안도 다시 봐야 한다.
+         참여자가 1명이어도 결론(자기 검수) 단계는 돈다 — 프롬프트가 다르므로 같은 답 두 번이 아니다. */
+      const closer = ['openai','anthropic','google'].find(a => S.keys[a]);
+      if(closer){
+        const solo = active.length < 2;
+        chain.push({ a:closer, seq:solo?'검수':'결론', prompt:()=>ctx+'[원래 요청]\n'+text
+          + sec('기획 초안 (1단계'+(closer==='openai'?', 네가 썼다':'')+')', got.openai)
+          + sec('구현 의견 (2단계'+(closer==='anthropic'?', 네가 썼다':'')+')', got.anthropic)
+          + sec('조사 의견 (3단계'+(closer==='google'?', 네가 썼다':'')+')', got.google)
+          + '\n\n'+reviewNote(proj)
+          + (solo ? '\n위 답은 네가 쓴 것이다. 검수 항목별로 O/X를 매기고, X는 고친 내용을 써라. 그 다음 바로 착수할 다음 단계 3개를 제시하라.'
+                  : '\n팀 의견을 종합해 최종 결정을 내려라. 무엇을 채택하고 무엇을 버리는지 밝히고, 바로 착수할 다음 단계 3개를 제시하라.') });
+      }
       for(const step of chain){
         if(!S.keys[step.a]) continue;
-        const d = document.createElement('div');
-        d.innerHTML = cardHTML(step.a, step.seq);
-        const card = d.firstElementChild;
-        turn.appendChild(card); scrollDown();
+        if(aborter.signal.aborted) break;
+        const card = newCard(step.a, step.seq); scrollDown();
         try{
-          const out = await ask(step.a, sysFor(step.a), step.prompt(got));
+          const out = await ask(step.a, sysFor(step.a), step.prompt(), retryNote(card));
           got[step.a] = out;
           fillCard(card, out, false);
-          proj.log.push({ role:'ai', agent:step.a, seq:step.seq, text:out });
+          record({ role:'ai', agent:step.a, seq:step.seq, text:out });
         }catch(err){
-          got[step.a] = '(응답 없음)';
-          fillCard(card, err.message, true);
-          proj.log.push({ role:'ai', agent:step.a, seq:step.seq, text:err.message, error:true });
+          got[step.a] = '';
+          const msg = err.message;
+          fillCard(card, msg, true);
+          record({ role:'ai', agent:step.a, seq:step.seq, text:msg, error:true });
         }
         scrollDown();
       }
     }
   } finally {
-    if(proj.log.length > 60) proj.log = proj.log.slice(-60);
-    save();
-    busy = false; $('#send').disabled = false;
+    aborter = null;
+    const before = proj.log.length;
+    trimLog(proj);
+    if(!save()) toast(SAVE_FAIL_MSG);
+    setBusy(false); busyProjectId = null;
+    /* 절단으로 저장 내용이 바뀌었거나, 카드가 화면 밖에 있으면 화면 = 저장 이 되도록 다시 그린다 */
+    if(cur().id === proj.id && (!turn.isConnected || proj.log.length !== before)) renderLog();
   }
 }
 
@@ -538,6 +725,7 @@ function openSheet(sel){ $('#scrim').classList.add('on'); $(sel).classList.add('
 function closeSheets(){ $('#scrim').classList.remove('on'); $$('.sheet').forEach(s=>s.classList.remove('on')); }
 $('#scrim').onclick = closeSheets;
 $$('.close').forEach(b => b.onclick = closeSheets);
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeSheets(); });
 
 /* --- 프로젝트 목록 --- */
 $('#strip').onclick = ()=>{ renderProjects(); openSheet('#sheetProjects'); };
@@ -545,7 +733,8 @@ $('#strip').onclick = ()=>{ renderProjects(); openSheet('#sheetProjects'); };
 function switchTo(id){
   S.current = id; save();
   renderStrip(); renderLog(); closeSheets();
-  toast(cur().name);
+  if(busy && busyProjectId && id !== busyProjectId){ const bp = S.projects.find(p=>p.id===busyProjectId); toast(cur().name+' · "'+(bp?bp.name:'')+'" 답변 대기 중'); }
+  else toast(cur().name);
 }
 
 function renderProjects(){
@@ -564,7 +753,7 @@ function renderProjects(){
     row.querySelector('.nm').onclick = ()=> switchTo(p.id);
     row.querySelector('.ren').onclick = ()=>{
       const v = prompt('프로젝트 이름', p.name);
-      if(v && v.trim()){ p.name = v.trim(); save(); renderProjects(); renderStrip(); }
+      if(v && v.trim()){ p.name = v.trim(); save(); renderProjects(); renderStrip(); if(!cur().log.length) renderEmpty(); }
     };
     row.querySelector('.del').onclick = ()=>{
       if(S.projects.length === 1){ toast('마지막 프로젝트는 지울 수 없습니다'); return; }
@@ -583,7 +772,7 @@ $('#newProjAdd').onclick = ()=>{
   const p = blankProject(v);
   S.projects.push(p); S.current = p.id;
   $('#newProjName').value = '';
-  save(); renderProjects(); renderStrip(); renderLog();
+  save(); renderStrip(); renderLog(); closeSheets();
   toast(v + ' 시작');
 };
 $('#newProjName').onkeydown = e => { if(e.key === 'Enter') $('#newProjAdd').click(); };
@@ -593,24 +782,26 @@ $('#btnBoard').onclick = ()=>{
   const p = cur();
   $('#boardTitle').textContent = p.name;
   $('#p_name').value = p.name; $('#p_prog').value = p.prog;
-  $('#p_stack').value = p.stack; $('#p_now').value = p.now; $('#p_next').value = p.next;
+  $('#p_stack').value = p.stack; $('#p_rules').value = p.rules; $('#p_now').value = p.now; $('#p_next').value = p.next;
   renderTodos(); openSheet('#sheetBoard');
 };
 
 $('#saveBoard').onclick = ()=>{
   const p = cur();
   p.name  = $('#p_name').value.trim() || p.name;
-  p.prog  = Math.max(0, Math.min(100, +$('#p_prog').value || 0));
+  p.prog  = clampProg($('#p_prog').value);
   p.stack = $('#p_stack').value.trim();
+  p.rules = $('#p_rules').value.trim();
   p.now   = $('#p_now').value.trim();
   p.next  = $('#p_next').value.trim();
-  save(); renderStrip(); closeSheets(); toast('저장했습니다');
+  const ok = save(); renderStrip(); if(!p.log.length) renderEmpty(); closeSheets(); toast(ok ? '저장했습니다' : SAVE_FAIL_MSG);
 };
 
 $('#clearLog').onclick = ()=>{
   const p = cur();
+  if(busy){ toast('답변이 끝난 뒤에 지워주세요'); return; }
   if(!confirm('"'+p.name+'"의 대화 기록만 지울까요? 보드 내용은 남습니다.')) return;
-  p.log = []; save(); renderLog(); closeSheets(); toast('기록을 지웠습니다');
+  p.log = []; const ok = save(); renderLog(); closeSheets(); toast(ok ? '기록을 지웠습니다' : SAVE_FAIL_MSG);
 };
 
 function renderTodos(){
@@ -648,26 +839,32 @@ $('#btnSettings').onclick = ()=>{
 $('#saveSettings').onclick = ()=>{
   ['openai','anthropic','google'].forEach(a=>{
     S.keys[a]   = $('#k_'+a).value.trim();
-    S.models[a] = $('#m_'+a).value.trim() || DEF_MODELS[a];
+    const m = $('#m_'+a).value.trim() || DEF_MODELS[a];
+    S.models[a] = DEAD_MODELS[m] || m;
     S.roles[a]  = $('#r_'+a).value.trim() || DEF_ROLES[a];
   });
-  save(); closeSheets(); toast('저장했습니다');
+  const ok = save(); closeSheets();
+  const warn = sunsetWarnings();
+  toast(!ok ? SAVE_FAIL_MSG : warn.length ? warn[0] : '저장했습니다');
+  if(!cur().log.length) renderEmpty();
 };
 
 /* --- 모드 · 입력 --- */
-$$('.mode').forEach(b => b.onclick = ()=>{
-  $$('.mode').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on'); S.mode = b.dataset.mode; save();
-});
+function setMode(m){
+  S.mode = m;
+  $$('.mode').forEach(x => { const on = x.dataset.mode === m; x.classList.toggle('on', on); x.setAttribute('aria-selected', on ? 'true' : 'false'); });
+}
+$$('.mode').forEach(b => b.onclick = ()=>{ setMode(b.dataset.mode); save(); });
 const ta = $('#input');
 ta.addEventListener('input', ()=>{ ta.style.height='auto'; ta.style.height = Math.min(ta.scrollHeight,132)+'px'; });
-ta.addEventListener('keydown', e => { if(e.key==='Enter' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); send(); } });
+ta.addEventListener('keydown', e => { if(e.key==='Enter' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); if(!busy) send(); } });
 $('#send').onclick = send;
 
 /* --- 시작 --- */
-$$('.mode').forEach(b => b.classList.toggle('on', b.dataset.mode === S.mode));
+setMode(S.mode);
 renderStrip();
 renderLog();
+{ const warn = sunsetWarnings(); if(warn.length) setTimeout(()=>toast(warn[0]), 600); }
 </script>
 </body>
 </html>
