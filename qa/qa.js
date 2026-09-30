@@ -34,7 +34,7 @@ const ok = (msg) => console.log(`  ok  ${msg}`);
     const body = r.request().postDataJSON(); apiLog.push({p:'openai', body});
     if (mode==='fail') return r.fulfill({status:401, contentType:'application/json', body:JSON.stringify({error:{message:'Incorrect API key provided'}})});
     if (mode==='html') return r.fulfill({status:502, contentType:'text/html', body:'<html>Bad gateway</html>'});
-    if (mode==='hang') return; // never respond
+    if (mode==='hang' || mode==='hangopenai') return; // never respond
     if (mode==='nullcontent') return r.fulfill({status:200, contentType:'application/json', body:JSON.stringify({choices:[{message:{content:null, refusal:'거부'}}]})});
     const txt = mode==='md' ? '# 제목\n\n**굵게** 그리고 `code`\n\n- 항목1\n- 항목2\n\n본문 사이\n- 항목3\n\n```js\nconst a = 1 < 2 && "x";\n```\n\n1. 번호\n2. 목록\n\n마무리 <script>alert(1)</script>' : '기획 답변: ' + body.messages[1].content.slice(0,60);
     return r.fulfill({status:200, contentType:'application/json', body:JSON.stringify({choices:[{message:{content:txt}}]})});
@@ -217,6 +217,38 @@ const ok = (msg) => console.log(`  ok  ${msg}`);
   }
   await shot('08-hang');
   mode = 'ok';
+
+  // 11b) 전송 중 Ctrl+Enter 는 요청을 끊으면 안 된다
+  mode = 'hang';
+  await page.fill('#input', '연타 테스트'); await page.click('#send'); await wait(300);
+  await page.fill('#input', '두번째'); await page.press('#input', 'Control+Enter'); await wait(300);
+  if (!(await page.$('#send.stop'))) note('BUG', '전송 중 Ctrl+Enter 가 진행 중인 요청을 끊어버림');
+  else ok('전송 중 Ctrl+Enter 무시');
+  await page.click('#send'); await wait(300); await page.fill('#input', '');
+
+  // 11c) 타임아웃은 요청 하나마다: 토론 모드에서 1단계가 시간 초과여도 2·3·결론은 정상
+  await page.evaluate(() => { REQUEST_TIMEOUT_MS = 1500; });
+  mode = 'hangopenai';
+  await page.click('.mode[data-mode="debate"]');
+  await page.fill('#input', '타임아웃 테스트'); await page.click('#send');
+  await page.waitForFunction(() => !document.querySelector('#send.stop'), null, {timeout:15000}).catch(()=>note('BUG','타임아웃 후 버튼이 복구되지 않음'));
+  const toCards = await page.$$eval('.turn:last-child .card', els=>els.map(e=>(e.querySelector('.seq')?.textContent||'')+':'+e.querySelector('.body').textContent.trim().slice(0,30)));
+  console.log('  타임아웃 토론:', JSON.stringify(toCards));
+  if (!/^1:응답 시간 초과/.test(toCards[0]||'')) note('BUG', '1단계 시간 초과 표시 없음');
+  // 결론은 다시 기획(OpenAI)이 맡으므로 이 목에서는 결론도 시간 초과가 정상. 2·3단계가 살아 있어야 한다.
+  if (toCards.length < 4 || toCards.slice(1,3).some(t=>/시간 초과|중지/.test(t))) note('BUG', '한 단계 타임아웃이 다음 단계까지 끊음 (요청 묶음 단위 타임아웃)');
+  else ok('단계별 타임아웃 격리 (2·3단계 정상, 결론은 OpenAI 무응답이라 시간 초과가 정상)');
+  await page.evaluate(() => { REQUEST_TIMEOUT_MS = 180000; });
+  await page.click('.mode[data-mode="parallel"]');
+  mode = 'ok';
+
+  // 11d) 종료된 모델명을 설정에 넣으면 자동 교체, 종료 예정 모델은 경고
+  await page.click('#btnSettings'); await page.fill('#m_anthropic', 'claude-3-5-sonnet-20241022'); await page.fill('#m_google', 'gemini-2.5-flash'); await page.click('#saveSettings'); await wait(300);
+  S = await state();
+  if (S.models.anthropic !== 'claude-opus-5-5') note('BUG', '종료된 Anthropic 모델명이 자동 교체되지 않음: ' + S.models.anthropic); else ok('종료 모델 자동 교체');
+  const sunsetToast = await page.textContent('#toast');
+  if (!/2026-10-16/.test(sunsetToast)) note('BUG', '종료 예정 모델(gemini-2.5-flash) 경고 토스트 없음: ' + sunsetToast); else ok('종료 예정 경고: ' + sunsetToast);
+  await page.click('#btnSettings'); await page.fill('#m_google', ''); await page.click('#saveSettings'); await wait(300);
 
   // 12) 프로젝트 보드
   await page.click('#btnBoard'); await wait(300);

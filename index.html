@@ -256,15 +256,34 @@ const DEF_MODELS = { openai:'gpt-5.2', anthropic:'claude-opus-5-5', google:'gemi
 const DEAD_MODELS = {
   'gemini-2.0-flash':'gemini-3.5-flash', 'gemini-2.0-flash-001':'gemini-3.5-flash',
   'gemini-2.0-flash-lite':'gemini-3.5-flash', 'gemini-2.0-flash-lite-001':'gemini-3.5-flash',
-  'chatgpt-4o-latest':'gpt-5.2'
+  'chatgpt-4o-latest':'gpt-5.2',
+  'claude-opus-4-1':'claude-opus-5-5', 'claude-opus-4-1-20250805':'claude-opus-5-5',
+  'claude-3-7-sonnet-20250219':'claude-opus-5-5', 'claude-3-5-haiku-20241022':'claude-opus-5-5',
+  'claude-3-opus-20240229':'claude-opus-5-5', 'claude-3-5-sonnet-20241022':'claude-opus-5-5',
+  'claude-3-5-sonnet-20240620':'claude-opus-5-5', 'claude-3-sonnet-20240229':'claude-opus-5-5',
+  'claude-2.1':'claude-opus-5-5', 'claude-2.0':'claude-opus-5-5'
 };
+/* 종료가 예고된 모델 → 날짜가 가까우면 경고 (3번 조사 팀장이 갱신) */
+const SUNSET_MODELS = {
+  'gemini-2.5-flash':{ until:'2026-10-16', next:'gemini-3.5-flash' }
+};
+function sunsetWarnings(){
+  const out = [], now = Date.now(), soon = 30*86400000;
+  for(const a of Object.keys(AGENTS)){
+    const m = S.models[a], su = SUNSET_MODELS[m];
+    if(!su) continue;
+    const left = new Date(su.until+'T00:00:00Z').getTime() - now;
+    if(left < soon) out.push(AGENTS[a].sub+' 모델 '+m+'은(는) '+su.until+(left<0?'에 종료됨':'에 종료 예정')+' → '+su.next+' 권장');
+  }
+  return out;
+}
 const DEF_ROLES = {
   openai:'너는 1인 게임 개발팀의 디렉터다. 기획, 게임 구조 설계, UI/UX, 우선순위 결정, 전체 총괄을 맡는다. 항상 실행 가능한 결론을 내고, 왜 그 선택인지 한두 줄로 밝혀라. 길게 늘어놓지 말고 핵심만 써라.',
   anthropic:'너는 이 팀의 시니어 엔지니어다. 실제 코드 작성, 리팩토링, 버그 수정, 성능 최적화를 맡는다. 코드는 바로 붙여넣어 돌아가도록 완성형으로 쓰고, 수정 지점을 명확히 표시하라. 돈·수량 계산 코드는 역마진(판매가가 원가+수수료보다 낮아지는 경우)과 0·음수·반올림 경계값을 반드시 막고, 그 검증 코드를 함께 써라. 위험한 부분은 짧게 경고하라.',
   google:'너는 이 팀의 리서처다. 최신 기술·에셋·플러그인·레퍼런스 조사와 대안 제시를 맡는다. 구체적인 이름과 버전을 밝히고, 항상 대안을 2개 이상 제시하며 각각의 장단점을 한 줄로 비교하라.'
 };
 
-const REQUEST_TIMEOUT_MS = 180000;
+let REQUEST_TIMEOUT_MS = 180000;   // 요청 하나당 (토론 모드는 단계마다 따로)
 const LOG_LIMIT = 60;
 
 const uid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
@@ -387,20 +406,29 @@ async function readJson(r){
   if(!d || typeof d!=='object') throw new Error('응답을 해석할 수 없습니다 (JSON 아님)');
   return d;
 }
-function post(url, headers, body){
-  return fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json', ...headers }, body:JSON.stringify(body), signal:aborter?.signal });
+function post(url, headers, body, signal){
+  return fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json', ...headers }, body:JSON.stringify(body), signal });
 }
-function humanError(err){
+/* 요청 하나짜리 신호: 자체 타임아웃 + 사용자 중지(aborter) 둘 다 반영 */
+function requestSignal(){
+  const c = new AbortController();
+  const t = setTimeout(()=>c.abort('timeout'), REQUEST_TIMEOUT_MS);
+  const onStop = ()=>c.abort('user');
+  const parent = aborter?.signal;
+  if(parent){ if(parent.aborted) onStop(); else parent.addEventListener('abort', onStop, { once:true }); }
+  return { signal:c.signal, done(){ clearTimeout(t); parent?.removeEventListener('abort', onStop); } };
+}
+function humanError(err, signal){
   /* abort(reason) 로 끊으면 브라우저에 따라 AbortError 대신 reason 값 자체가 던져진다 */
-  if(aborter?.signal?.aborted || err?.name === 'AbortError') return aborter?.signal?.reason === 'timeout' ? '응답 시간 초과 ('+(REQUEST_TIMEOUT_MS/1000)+'초). 다시 시도해주세요.' : '중지했습니다.';
+  if(signal?.aborted || err?.name === 'AbortError') return signal?.reason === 'timeout' ? '응답 시간 초과 ('+(REQUEST_TIMEOUT_MS/1000)+'초). 다시 시도해주세요.' : '중지했습니다.';
   if(/Failed to fetch|NetworkError|Load failed/i.test(err?.message||'')) return '네트워크 오류: 인터넷 연결 또는 브라우저 차단(CORS)을 확인해주세요.';
   return err?.message || String(err);
 }
 
-async function callOpenAI(sys, usr){
+async function callOpenAI(sys, usr, signal){
   const r = await post('https://api.openai.com/v1/chat/completions',
     { 'Authorization':'Bearer '+S.keys.openai },
-    { model:S.models.openai, messages:[{role:'system',content:sys},{role:'user',content:usr}] });
+    { model:S.models.openai, messages:[{role:'system',content:sys},{role:'user',content:usr}] }, signal);
   const d = await readJson(r);
   const m = d.choices?.[0]?.message;
   if(!m) throw new Error('응답이 비어 있습니다.');
@@ -410,10 +438,10 @@ async function callOpenAI(sys, usr){
   if(d.choices[0].finish_reason === 'length') out += '\n\n_(출력 한도에 걸려 뒷부분이 잘렸습니다)_';
   return out;
 }
-async function callAnthropic(sys, usr){
+async function callAnthropic(sys, usr, signal){
   const r = await post('https://api.anthropic.com/v1/messages',
     { 'x-api-key':S.keys.anthropic, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
-    { model:S.models.anthropic, max_tokens:16000, system:sys, messages:[{role:'user',content:usr}] });
+    { model:S.models.anthropic, max_tokens:16000, system:sys, messages:[{role:'user',content:usr}] }, signal);
   const d = await readJson(r);
   if(d.stop_reason === 'refusal'){
     const why = d.stop_details?.category ? ' ('+d.stop_details.category+')' : '';
@@ -424,10 +452,10 @@ async function callAnthropic(sys, usr){
   if(d.stop_reason === 'max_tokens') out += '\n\n_(출력 한도 max_tokens에 걸려 뒷부분이 잘렸습니다)_';
   return out;
 }
-async function callGemini(sys, usr){
+async function callGemini(sys, usr, signal){
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(S.models.google) + ':generateContent';
   const r = await post(url, { 'x-goog-api-key':S.keys.google },
-    { system_instruction:{ parts:[{text:sys}] }, contents:[{ role:'user', parts:[{text:usr}] }] });
+    { system_instruction:{ parts:[{text:sys}] }, contents:[{ role:'user', parts:[{text:usr}] }] }, signal);
   const d = await readJson(r);
   if(d.promptFeedback?.blockReason) throw new Error('요청이 차단되었습니다: '+d.promptFeedback.blockReason);
   const c = d.candidates?.[0];
@@ -442,9 +470,12 @@ async function callGemini(sys, usr){
   return out;
 }
 const CALL = { openai:callOpenAI, anthropic:callAnthropic, google:callGemini };
-function ask(agent, sys, usr){
-  if(!S.keys[agent]) return Promise.reject(new Error(AGENTS[agent].sub+' 키가 설정에 없습니다.'));
-  return CALL[agent](sys, usr);
+async function ask(agent, sys, usr){
+  if(!S.keys[agent]) throw new Error(AGENTS[agent].sub+' 키가 설정에 없습니다.');
+  const rs = requestSignal();
+  try{ return await CALL[agent](sys, usr, rs.signal); }
+  catch(err){ throw new Error(humanError(err, rs.signal)); }
+  finally{ rs.done(); }
 }
 
 /* ══════════ 프롬프트 ══════════ */
@@ -564,7 +595,6 @@ async function send(){
   const proj = cur();
   setBusy(true);
   aborter = new AbortController();
-  const timer = setTimeout(()=>aborter.abort('timeout'), REQUEST_TIMEOUT_MS);
   $('#input').value = ''; $('#input').style.height = 'auto';
 
   const ctx = contextBlock(proj);          // 이번 질문을 넣기 전의 현황
@@ -591,7 +621,7 @@ async function send(){
           fillCard(cards[a], out, false);
           record({ role:'ai', agent:a, text:out });
         }catch(err){
-          const msg = humanError(err);
+          const msg = err.message;
           fillCard(cards[a], msg, true);
           record({ role:'ai', agent:a, text:msg, error:true });
         }
@@ -626,7 +656,7 @@ async function send(){
           record({ role:'ai', agent:step.a, seq:step.seq, text:out });
         }catch(err){
           got[step.a] = '';
-          const msg = humanError(err);
+          const msg = err.message;
           fillCard(card, msg, true);
           record({ role:'ai', agent:step.a, seq:step.seq, text:msg, error:true });
         }
@@ -634,7 +664,6 @@ async function send(){
       }
     }
   } finally {
-    clearTimeout(timer);
     aborter = null;
     trimLog(proj);
     save();
@@ -763,7 +792,9 @@ $('#saveSettings').onclick = ()=>{
     S.models[a] = DEAD_MODELS[m] || m;
     S.roles[a]  = $('#r_'+a).value.trim() || DEF_ROLES[a];
   });
-  save(); closeSheets(); toast('저장했습니다');
+  save(); closeSheets();
+  const warn = sunsetWarnings();
+  toast(warn.length ? warn[0] : '저장했습니다');
   if(!cur().log.length) renderEmpty();
 };
 
@@ -775,13 +806,14 @@ function setMode(m){
 $$('.mode').forEach(b => b.onclick = ()=>{ setMode(b.dataset.mode); save(); });
 const ta = $('#input');
 ta.addEventListener('input', ()=>{ ta.style.height='auto'; ta.style.height = Math.min(ta.scrollHeight,132)+'px'; });
-ta.addEventListener('keydown', e => { if(e.key==='Enter' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); send(); } });
+ta.addEventListener('keydown', e => { if(e.key==='Enter' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); if(!busy) send(); } });
 $('#send').onclick = send;
 
 /* --- 시작 --- */
 setMode(S.mode);
 renderStrip();
 renderLog();
+{ const warn = sunsetWarnings(); if(warn.length) setTimeout(()=>toast(warn[0]), 600); }
 </script>
 </body>
 </html>
